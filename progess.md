@@ -87,6 +87,7 @@ open_acc:	Number of open credit lines.
 * a few large outliers
 * moderately right-skewed
 * if we removed these outliers, would probably be normally distributed
+* **capping, convert factor and set ranges, log transfrom**
 
 pub_rec: Number of derogatory public records.
 * very right-skewed
