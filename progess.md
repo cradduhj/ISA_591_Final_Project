@@ -186,6 +186,7 @@ last_credit_pull_d:	Most recent date credit was pulled.
 * has a few blank/empty values as well that we need to deal with or label
 * 137 levels
 * could we combine levels into seasons & years or even just years?
+* **make into "years since" last pull. classify NAs as "Never Pulled"**
 
 acc_now_delinq:	Number of accounts currently delinquent.
 * very right-skewed
