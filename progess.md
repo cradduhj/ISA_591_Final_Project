@@ -115,6 +115,7 @@ total_acc: Total number of credit lines in the borrower’s credit file.
 * slightly right-skewed
 * has a couple large outliers
 * if we removed these outliers, would probably be normally distributed
+* **explore the ratio with open_acc**
 
 initial_list_status: Initial listing status of the loan: f (whole) or w (fractional).
 * 2 levels: "f" - 60.05%, "w" - 39.95%
@@ -131,6 +132,7 @@ mort_acc:	Number of mortgage accounts.
 * lots of zeros with a few large outliers
 * consider removing outliers
 * 22854 missing values
+* **impute missing with 1 for mortgage ownership and 0 for all others**
 
 pub_rec_bankruptcies:	Number of public record bankruptcies.
 * 336 missing values
