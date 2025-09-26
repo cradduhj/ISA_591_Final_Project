@@ -140,6 +140,8 @@ pub_rec_bankruptcies:	Number of public record bankruptcies.
 * very right-skewed
 * values range from integers 0 to 8
 * consider converting to categorical with a few levels
+* **convert to factor with levels "0 , 1 , >1"**
+* **how to handle missing? they correspond to missings in mort_acc**
 
 address: Borrower’s address.
 * 99.58% unique values
