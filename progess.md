@@ -161,12 +161,14 @@ fico_range_low:	Lower end of FICO score range.
 * right-skewed, multimodal
 * probably multicollinear with fico_range_high
 * consider combining with high as median?
+* **create new variable with median**
 
 fico_range_high: Upper end of FICO score range.
 * right-skewed, multimodal
 * probably multicollinear with fico_range_low
 * consider combining with low as median?
-
+* **create new variable with median**
+  
 inq_last_6mths:	Number of credit inquiries in the past 6 months.
 * right-skewed
 * range is 0 - 8
