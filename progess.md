@@ -1,42 +1,169 @@
 # Next Steps
 
 loan_default:	Whether the loan has defaulted. Values: “Yes”, “No”.
-* sdg
+* 2 levels: No - 80.38%, Yes - 19.62%
+* response variable
+* don't think it needs any changes
 
 loan_amnt: The listed amount of the loan applied for by the borrower.
-* sdg
+* slight right-skew, multimodal distribution
 
 term:	The number of payments on the loan (36 or 60 months).
+* 2 levels: "36 months" - 76.35%, "60 months" - 23.65%
+* don't think it needs any changes
+
 int_rate:	Interest rate on the loan.
+* slight right-skew, multimodal
+
 installment: The monthly payment owed by the borrower if the loan originates.
+* light right-skew
+
 grade: Loan grade assigned by Lending Club.
+* 7 levels: "A" - "G"
+
 sub_grade: Loan subgrade assigned by Lending Club.
+* 35 levels: 1 - 5 for each "A" - "G"
+
 emp_title: Job title supplied by the borrower.
+* 112646 levels, a few common values
+* has a few blank/empty values as well that we need to deal with or label
+
 emp_length:	Employment length in years (“< 1 year” to “10+ years”).
+* 12 levels: "<1" - "10+"
+* possibly group these into fewer, semi-equally weighted levels
+* has a few blank/empty values as well that we need to deal with or label
+
 home_ownership:	Home ownership status: RENT, OWN, MORTGAGE, OTHER.
+* 5 levels: MORTGAGE, RENT, OWN, OTHER, NONE
+* possibly group OTHER and NONE together
+
 annual_inc: Self-reported annual income of the borrower.
+* a few very large outliers
+* very right-skewed
+* if we removed these large outliers, would probably be normally distributed
+* can we ethically include income in predicting loan default?
+
 verification_status: Whether income was verified: Verified, Not Verified, etc.
+* 3 levels: "Verified", "Source Verified", "Not Verified"
+* don't think it needs any changes
+
 issue_d: The month when the loan was funded.
+* 115 levels
+* June 2007 - December 2016
+* does issue date really matter?
+* could we combine levels into seasons & years or even just years?
+
 purpose: Category provided by the borrower for the loan request.
+* 14 levels
+* pretty equally weighted levels
+* could possibly combine a few? not sure
+
 title: Loan title provided by the borrower.
+* 31659 levels
+* a few very highly weighted levels
+* seems like subcategory of purpose really
+* has a few blank/empty values as well that we need to deal with or label
+
 dti: Debt-to-income ratio.
+* a few very large outliers
+* very right-skewed
+* if we removed these outliers, would probably be normally distributed
+* probably multicollinear with income or other variables?
+
 earliest_cr_line:	Month of the borrower’s earliest reported credit line.
+* 659 levels
+* month/year format
+* consider converting to years (or range of years) since earliest credit line (would certainly reduce levels)
+
 open_acc:	Number of open credit lines.
+* a few large outliers
+* moderately right-skewed
+* if we removed these outliers, would probably be normally distributed
+
 pub_rec: Number of derogatory public records.
+* very right-skewed
+* majority zeros
+* a few large values
+* consider combining into "0", "a few", "a lot", etc.
+
 revol_bal: Total revolving balance.
+* a few very large outliers
+* very right-skewed
+* if we removed these outliers, would probably be normally distributed
+
 revol_util:	Revolving line utilization rate (credit used / total credit).
+* a few large outliers
+* very right-skewed
+* if we removed these outliers, would probably be normally distributed
+* 177 missing values
+* probably multicollinear with revol_bal, etc.
+* consider PCA, removing, combining with others
+
 total_acc: Total number of credit lines in the borrower’s credit file.
+* slightly right-skewed
+* has a couple large outliers
+* if we removed these outliers, would probably be normally distributed
+
 initial_list_status: Initial listing status of the loan: f (whole) or w (fractional).
+* 2 levels: "f" - 60.05%, "w" - 39.95%
+* if dictionary is true, labels should be renamed for clarity
+
 application_type:	Type of application: individual, joint, direct pay.
+* 3 levels
+* "individual" accounts for 99.82% of values
+* combine into "individual" and "other"?
+* consider removing if not predictive since basically a constant
+
 mort_acc:	Number of mortgage accounts.
+* very right-skewed
+* lots of zeros with a few large outliers
+* consider removing outliers
+* 22854 missing values
+
 pub_rec_bankruptcies:	Number of public record bankruptcies.
+* 336 missing values
+* very right-skewed
+* values range from integers 0 to 8
+* consider converting to categorical with a few levels
+
 address: Borrower’s address.
+* 99.58% unique values
+* a few addresses shared by multiple people
+* are these the same people or family members? does that matter?
+* could we combine address into cities, counties, states for more predictive power?
+
 delinq_2yrs: Number of 30+ days delinquency incidents in past 2 years.
+* very right-skewed
+* a few large outliers
+* range is 0 - 29
+* consider converting to categorical with a few levels (0, a few, many, etc.)
+
 fico_range_low:	Lower end of FICO score range.
+* right-skewed, multimodal
+* probably multicollinear with fico_range_high
+* consider combining with high as median?
+
 fico_range_high: Upper end of FICO score range.
+* right-skewed, multimodal
+* probably multicollinear with fico_range_low
+* consider combining with low as median?
+
 inq_last_6mths:	Number of credit inquiries in the past 6 months.
+* 
+
 mths_since_last_delinq:	Months since last delinquency (NA if never).
+* 
+
 last_credit_pull_d:	Most recent date credit was pulled.
+* has a few blank/empty values as well that we need to deal with or label
+* 
+
 acc_now_delinq:	Number of accounts currently delinquent.
+* 
+
 hardship_flag: Whether borrower is under hardship plan (Y/N).
+* 
+
 debt_settlement_flag:	Whether borrower is in a debt settlement program (Y/N).
+* 
+
