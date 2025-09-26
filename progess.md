@@ -94,6 +94,7 @@ pub_rec: Number of derogatory public records.
 * majority zeros
 * a few large values
 * consider combining into "0", "a few", "a lot", etc.
+* **conver to factor and level as "0 , 1 , >1" possibly removing the single observation with >19 pub_rec**
 
 revol_bal: Total revolving balance.
 * a few very large outliers
