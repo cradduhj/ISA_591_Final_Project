@@ -172,7 +172,7 @@ fico_range_high: Upper end of FICO score range.
 inq_last_6mths:	Number of credit inquiries in the past 6 months.
 * right-skewed
 * range is 0 - 8
-* consider converting to categorical with a few levels (0, a few, many, etc.)
+* **consider converting to categorical with a few levels (0, a few, many, etc.)**
 
 mths_since_last_delinq:	Months since last delinquency (NA if never).
 * right-skewed
