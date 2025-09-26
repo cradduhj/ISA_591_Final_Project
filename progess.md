@@ -192,10 +192,11 @@ acc_now_delinq:	Number of accounts currently delinquent.
 * very right-skewed
 * range is 0 - 6
 * consider converting to categorical with a few levels (0 and 1+, 0 and 1 and 2+, etc.)
+* **convert to factor with levels "0 , 1+"**
 
 hardship_flag: Whether borrower is under hardship plan (Y/N).
 * 1 level: No
-* remove since constant and no predictive power
+* **remove since constant and no predictive power**
 
 debt_settlement_flag:	Whether borrower is in a debt settlement program (Y/N).
 * 2 levels: "N" - 98.69%, "Y" - 1.31%
