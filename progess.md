@@ -180,6 +180,7 @@ mths_since_last_delinq:	Months since last delinquency (NA if never).
 * could be multicollinear with other delinquency variables
 * 126517 missing values
 * since NA if never, consider labeling as something different ("never", etc.)
+* **convert to factor and level it by years since last delinq instead of months**
 
 last_credit_pull_d:	Most recent date credit was pulled.
 * has a few blank/empty values as well that we need to deal with or label
