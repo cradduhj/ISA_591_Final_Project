@@ -202,3 +202,5 @@ debt_settlement_flag:	Whether borrower is in a debt settlement program (Y/N).
 * 2 levels: "N" - 98.69%, "Y" - 1.31%
 * don't think any changes are needed
 
+**remove all dublicate values**
+
