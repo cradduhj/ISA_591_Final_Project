@@ -155,6 +155,7 @@ delinq_2yrs: Number of 30+ days delinquency incidents in past 2 years.
 * a few large outliers
 * range is 0 - 29
 * consider converting to categorical with a few levels (0, a few, many, etc.)
+* **convert to categorical with 0, 1, 2, 2+ OR 0, 1, 1+**
 
 fico_range_low:	Lower end of FICO score range.
 * right-skewed, multimodal
