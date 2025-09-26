@@ -44,6 +44,7 @@ annual_inc: Self-reported annual income of the borrower.
 * very right-skewed
 * if we removed these large outliers, would probably be normally distributed
 * can we ethically include income in predicting loan default?
+* we want to try to cap or log transforming the variable
 
 verification_status: Whether income was verified: Verified, Not Verified, etc.
 * 3 levels: "Verified", "Source Verified", "Not Verified"
