@@ -20,9 +20,11 @@ installment: The monthly payment owed by the borrower if the loan originates.
 
 grade: Loan grade assigned by Lending Club.
 * 7 levels: "A" - "G"
+* **remove grade or clasify sub_grade as range (1,5)**
 
 sub_grade: Loan subgrade assigned by Lending Club.
 * 35 levels: 1 - 5 for each "A" - "G"
+* **remove grade or clasify sub_grade as range (1,5)**
 
 emp_title: Job title supplied by the borrower.
 * 112646 levels, a few common values
