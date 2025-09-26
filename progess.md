@@ -75,6 +75,7 @@ dti: Debt-to-income ratio.
 * very right-skewed
 * if we removed these outliers, would probably be normally distributed
 * probably multicollinear with income or other variables?
+* **remove largest observation and try capping or log transforming like annual_inc**
 
 earliest_cr_line:	Month of the borrower’s earliest reported credit line.
 * 659 levels
