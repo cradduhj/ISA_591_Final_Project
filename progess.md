@@ -100,6 +100,7 @@ revol_bal: Total revolving balance.
 * a few very large outliers
 * very right-skewed
 * if we removed these outliers, would probably be normally distributed
+* **not really sure, possibly try a transformation?**
 
 revol_util:	Revolving line utilization rate (credit used / total credit).
 * a few large outliers
