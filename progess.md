@@ -1,10 +1,10 @@
 # Next Steps
 
 loan_default:	Whether the loan has defaulted. Values: “Yes”, “No”.
-* 
+* sdg
 
 loan_amnt: The listed amount of the loan applied for by the borrower.
-* 
+* sdg
 
 term:	The number of payments on the loan (36 or 60 months).
 int_rate:	Interest rate on the loan.
