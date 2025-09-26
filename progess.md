@@ -81,6 +81,7 @@ earliest_cr_line:	Month of the borrower’s earliest reported credit line.
 * 659 levels
 * month/year format
 * consider converting to years (or range of years) since earliest credit line (would certainly reduce levels)
+* **years since or range of years since**
 
 open_acc:	Number of open credit lines.
 * a few large outliers
