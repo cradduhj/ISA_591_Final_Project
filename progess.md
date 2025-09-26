@@ -32,6 +32,7 @@ emp_length:	Employment length in years (“< 1 year” to “10+ years”).
 * 12 levels: "<1" - "10+"
 * possibly group these into fewer, semi-equally weighted levels
 * has a few blank/empty values as well that we need to deal with or label
+* reclassify blanks as "unreported" for now.
 
 home_ownership:	Home ownership status: RENT, OWN, MORTGAGE, OTHER.
 * 5 levels: MORTGAGE, RENT, OWN, OTHER, NONE
