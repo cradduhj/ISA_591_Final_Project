@@ -149,21 +149,32 @@ fico_range_high: Upper end of FICO score range.
 * consider combining with low as median?
 
 inq_last_6mths:	Number of credit inquiries in the past 6 months.
-* 
+* right-skewed
+* range is 0 - 8
+* consider converting to categorical with a few levels (0, a few, many, etc.)
 
 mths_since_last_delinq:	Months since last delinquency (NA if never).
-* 
+* right-skewed
+* a few large outliers
+* could be multicollinear with other delinquency variables
+* 126517 missing values
+* since NA if never, consider labeling as something different ("never", etc.)
 
 last_credit_pull_d:	Most recent date credit was pulled.
 * has a few blank/empty values as well that we need to deal with or label
-* 
+* 137 levels
+* could we combine levels into seasons & years or even just years?
 
 acc_now_delinq:	Number of accounts currently delinquent.
-* 
+* very right-skewed
+* range is 0 - 6
+* consider converting to categorical with a few levels (0 and 1+, 0 and 1 and 2+, etc.)
 
 hardship_flag: Whether borrower is under hardship plan (Y/N).
-* 
+* 1 level: No
+* remove since constant and no predictive power
 
 debt_settlement_flag:	Whether borrower is in a debt settlement program (Y/N).
-* 
+* 2 levels: "N" - 98.69%, "Y" - 1.31%
+* don't think any changes are needed
 
