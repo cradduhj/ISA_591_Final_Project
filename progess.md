@@ -126,6 +126,7 @@ application_type:	Type of application: individual, joint, direct pay.
 * "individual" accounts for 99.82% of values
 * combine into "individual" and "other"?
 * consider removing if not predictive since basically a constant
+* **will likely leave this be since it is only 3 levels and the direct pay level seems to be highly correlated with defaulting**
 
 mort_acc:	Number of mortgage accounts.
 * very right-skewed
