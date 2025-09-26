@@ -2,7 +2,10 @@
 
 loan_default:	Whether the loan has defaulted. Values: “Yes”, “No”.
 * 
+
 loan_amnt: The listed amount of the loan applied for by the borrower.
+* 
+
 term:	The number of payments on the loan (36 or 60 months).
 int_rate:	Interest rate on the loan.
 installment: The monthly payment owed by the borrower if the loan originates.
