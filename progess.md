@@ -148,6 +148,7 @@ address: Borrower’s address.
 * a few addresses shared by multiple people
 * are these the same people or family members? does that matter?
 * could we combine address into cities, counties, states for more predictive power?
+* **combine into zipcodes, combine into states, compare**
 
 delinq_2yrs: Number of 30+ days delinquency incidents in past 2 years.
 * very right-skewed
