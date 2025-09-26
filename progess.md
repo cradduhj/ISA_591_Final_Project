@@ -109,6 +109,7 @@ revol_util:	Revolving line utilization rate (credit used / total credit).
 * 177 missing values
 * probably multicollinear with revol_bal, etc.
 * consider PCA, removing, combining with others
+* **impute missing values with 0, possibly remove or manage the largest outlier**
 
 total_acc: Total number of credit lines in the borrower’s credit file.
 * slightly right-skewed
