@@ -117,7 +117,7 @@ total_acc: Total number of credit lines in the borrower’s credit file.
 * if we removed these outliers, would probably be normally distributed
 * **explore the ratio with open_acc**
 
-initial_list_status: Initial listing status of the loan: f (whole) or w (fractional).
+initial_list_status: Initial listing status of the loan: f (fractional) or w (whole).
 * 2 levels: "f" - 60.05%, "w" - 39.95%
 * if dictionary is true, labels should be renamed for clarity
 
