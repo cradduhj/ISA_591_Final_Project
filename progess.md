@@ -55,6 +55,7 @@ issue_d: The month when the loan was funded.
 * June 2007 - December 2016
 * does issue date really matter?
 * could we combine levels into seasons & years or even just years?
+* **split into 'years since' and also into seperate months(possibly seasons later on)**
 
 purpose: Category provided by the borrower for the loan request.
 * 14 levels
