@@ -640,6 +640,9 @@ table(df$term)
 **We chose to rename the values of `term` from months to years to be consistent with our general feature engineering approach for time variables. Additionally, there was a leading space in front of the original values, so we removed it.**
 
 ```{r}
+# create missing value indicator of `mort_acc`
+df$mort_acc_NA <- ifelse(is.na(df$mort_acc), 1, 0)
+
 # impute missing values of `mort_acc` as median of `home_ownership` groupings
 df <- df %>%
   group_by(home_ownership) %>%
