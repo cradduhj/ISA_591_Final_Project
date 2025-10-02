@@ -85,16 +85,9 @@ head(df)
 
 # Exploratory Data Analysis
 
-The goal of this phase is to explore the dataset, understand its structure, detect any patterns or anomalies, and clean the data to prepare it for model building. Proper EDA and data preprocessing are essential for enhancing the quality of the dataset and ensuring the models can learn effectively from the data. 
+The goal of this phase is to explore the dataset, understand its structure, detect any patterns or anomalies, and clean the data to prepare it for model building. Proper EDA and data preprocessing are essential for enhancing the quality of the dataset and ensuring the models can learn effectively from the data.
 
-## Data Overview & Summary Statistics
-
-### Data Structure
-
-```{r}
-# view the structure of the data
-str(df)
-```
+## Data Overview
 
 ### Summary Statistics
 
@@ -146,8 +139,8 @@ num_cols <- df %>%
 # loop through numeric columns and plot
 plots <- map(num_cols, function(col) {
   ggplot(df, aes(x = loan_default, y = .data[[col]], fill = loan_default)) +
-    geom_violin(trim = FALSE) +
-    scale_y_log10() +
+    geom_violin(trim = FALSE) + # set plots as violin-shaped
+    scale_y_log10() + # accounts for skewed values
     labs(title = paste("Distribution of", col, "by Loan Default"),
          y = col, x = "Loan Default") +
     theme_minimal()
@@ -180,10 +173,13 @@ levels(df$application_type)
 **We chose to relevel `application_type` so that the highest frequency level, "INDIVIDUAL", is set as the base level.**
 
 ```{r}
-# set the level with the highest frequency as the base level for `purpose`
-df$purpose <- forcats::fct_relevel(df$purpose, names(which.max(table(df$purpose))))
+# collapse `purpose` into the top 10 levels in terms of frequency ("other" includes all less frequent levels)
+df$purpose <- forcats::fct_collapse(df$purpose, OTHER = c("renewable_energy", "educational", "wedding", "house", "other"))
 
-levels(df$purpose)
+# set the level with the highest frequency as the base level for `purpose`
+df$purpose <- forcats::fct_relevel(df$purpose, names(which.max(table(df$purpose)))) # set base to most frequent level
+
+table(df$purpose)
 ```
 
 **We chose to relevel `purpose` so that the highest frequency level ("debt_consolidation") is set as the base level.**
@@ -243,10 +239,10 @@ This section includes recategorizing date variables into meaningful time variabl
 ```{r}
 # recategorizing `issue_d` into years since
 df$issue_d_date <- my(df$issue_d)
-df$issue_d_years_since <- year(Sys.Date()) - year(df$issue_d_date)
+df$issue_d_years_since <- year(Sys.Date()) - year(df$issue_d_date) # difference between current year and year of issue date
 
 # recategorizing `issue_d` into months of the year
-# df$issue_d_months <- substr(df$issue_d, 0, 3)
+# df$issue_d_months <- substr(df$issue_d, 0, 3) # pull out 3-letter abbreviation of month (e.g. "Apr")
 
 # table(df$issue_d_months)
 
@@ -261,11 +257,11 @@ df <- df %>% dplyr::select(-issue_d, -issue_d_date)
 # df$open_acc_log <- log1p(df$open_acc)
 
 # capping `open_acc`
-# quantile(df$open_acc, probs = seq(0.9, 1, 0.001))
-# cap_value <- quantile(df$open_acc, 0.998)
+# quantile(df$open_acc, probs = seq(0.9, 1, 0.001)) # print quantiles to visually identify cutoffs
+# cap_value <- quantile(df$open_acc, 0.998) # assign value at given quantile
 # df$open_acc_cap <- ifelse(df$open_acc > cap_value, cap_value, df$open_acc)
 
-# combining `open_acc` into 10 bins
+# combining `open_acc` into 10 semi-equal width bins
 df$open_acc_bins <- cut(
   df$open_acc,
   breaks = quantile(df$open_acc, probs = seq(0, 1, 0.1)),
@@ -280,9 +276,9 @@ table(df$open_acc_bins)
 ```{r}
 # recategorizing `earliest_cr_line` into years since
 df$earliest_cr_line_date <- my(df$earliest_cr_line)
-df$earliest_cr_line_years_since <- year(Sys.Date()) - year(df$earliest_cr_line_date)
+df$earliest_cr_line_years_since <- year(Sys.Date()) - year(df$earliest_cr_line_date) # difference between current year and year of earliest credit line
 
-# combining `earliest_cr_line_years_since` into 10 bins
+# combining `earliest_cr_line_years_since` into 10 semi-equal width bins
 df$earliest_cr_line_bins <- cut(
   df$earliest_cr_line_years_since,
   breaks = quantile(df$earliest_cr_line_years_since, probs = seq(0, 1, 0.1)),
@@ -302,12 +298,12 @@ df <- df %>% dplyr::select(-earliest_cr_line, -earliest_cr_line_date, -earliest_
 df$address <- as.character(df$address)
 
 # pull out `zip_code` from `address`
-# df$zip_code <- factor(substr(df$address, nchar(df$address) - 4, nchar(df$address)))
+# df$zip_code <- factor(substr(df$address, nchar(df$address) - 4, nchar(df$address))) # zip code is located in the last 5 indexes
 
 # table(df$zip_code)
 
 # pull out `territory` from `address`
-df$territory <- factor(substr(df$address, nchar(df$address) - 7, nchar(df$address) - 6))
+df$territory <- factor(substr(df$address, nchar(df$address) - 7, nchar(df$address) - 6)) # territory is located within the indexes (-7,-6)
 
 # remove `address`
 df <- df %>% dplyr::select(-address)
@@ -316,44 +312,44 @@ df <- df %>% dplyr::select(-address)
 **`address` is made up of 99.58% unique values. In order to treat `address` as a factor with a reasonable number of levels, we chose to pull out the territories from each address and use `territory` as a substitute for location. In addition to the 50 U.S. states, "DC" (District of Columbia), "AA" (Armed Forces America), "AE" (Armed Forces Europe, Middle East, Africa, Canada), and "AP" (Armed Forces Pacific) are included as territories in the data. We also considered pulling out zip code as a more granular location variable, but there seems to be a data entry error as only 10 unique zip codes are found in the data despite there being 54 territories.**
 
 ```{r}
-# recode `delinq_2yrs` into 4 levels: "0", "1", "2", "2+"
+# recode `delinq_2yrs` into 4 levels: "0", "1", "2", "3+"
 df$delinq_2yrs <- forcats::fct_collapse(
   df$delinq_2yrs %>% as.character(), 
   "0" = "0",
   "1" = "1",
   "2" = "2",
-  "2+" = as.character(3:max(df$delinq_2yrs)))
+  "3+" = as.character(3:max(df$delinq_2yrs))) # range from 3 to the max value of the variable
 
 # reorder levels of `delinq_2yrs`
-df$delinq_2yrs <- forcats::fct_relevel(df$delinq_2yrs, "0", "1", "2", "2+")
+df$delinq_2yrs <- forcats::fct_relevel(df$delinq_2yrs, "0", "1", "2", "3+")
 
 table(df$delinq_2yrs)
 ```
 
-**`delinq_2yrs` is zero-dominated and thus right-skewed. To combat this, we chose to convert `delinq_2yrs` to factor and collapse the categories into 4 levels: "0", "1", "2", and "2+". We did this to reduce the number of levels, mitigate data sparsity, and classify large values of `delinq_2yrs` as equal.**
+**`delinq_2yrs` is zero-dominated and thus right-skewed. To combat this, we chose to convert `delinq_2yrs` to factor and collapse the categories into 4 levels: "0", "1", "2", and "3+". We did this to reduce the number of levels, mitigate data sparsity, and classify large values of `delinq_2yrs` as equal.**
 
 ```{r}
-# recode `inq_last_6mths` into 3 levels: "0", "1", "1+"
+# recode `inq_last_6mths` into 3 levels: "0", "1", "2+"
 df$inq_last_6mths <- forcats::fct_collapse(
   df$inq_last_6mths %>% as.character(), 
   "0" = "0",
   "1" = "1",
-  "1+" = as.character(2:max(df$inq_last_6mths)))
+  "2+" = as.character(2:max(df$inq_last_6mths))) # range from 2 to the max value of the variable
 
 # reorder the levels of `inq_last_6mths`
-df$inq_last_6mths <- forcats::fct_relevel(df$inq_last_6mths, "0", "1", "1+")
+df$inq_last_6mths <- forcats::fct_relevel(df$inq_last_6mths, "0", "1", "2+")
 
 table(df$inq_last_6mths)
 ```
 
-**`inq_last_6mths` is zero-dominated and right-skewed. To combat this, we chose to convert `inq_last_6mths` to factor and collapse the categories into 3 levels: "0", "1", and "1+". We did this to reduce the number of levels, mitigate data sparsity, and classify larger values of `inq_last_6mths` as equal.**
+**`inq_last_6mths` is zero-dominated and right-skewed. To combat this, we chose to convert `inq_last_6mths` to factor and collapse the categories into 3 levels: "0", "1", and "12". We did this to reduce the number of levels, mitigate data sparsity, and classify larger values of `inq_last_6mths` as equal.**
 
 ```{r}
 # recode `acc_now_delinq` into 2 levels: "0", "1+"
 df$acc_now_delinq <- forcats::fct_collapse(
   df$acc_now_delinq %>% as.character(), 
   "0" = "0",
-  "1+" = as.character(1:max(as.numeric(df$acc_now_delinq))))
+  "1+" = as.character(1:max(as.numeric(df$acc_now_delinq))))  # range from 1 to the max value of the variable
 
 # reorder the levels of `acc_now_delinq`
 df$acc_now_delinq <- forcats::fct_relevel(df$acc_now_delinq, "0", "1+")
@@ -369,24 +365,24 @@ This section includes slicing variables, performing log transformations, capping
 
 ```{r}
 # remove `grade`
-# df <- df %>% dplyr::select(-grade)
+df <- df %>% dplyr::select(-grade)
 
 # remove lettering from `sub_grade`
-df$sub_grade_num <- as.numeric(gsub("[A-G]", "", df$sub_grade))
+# df$sub_grade_num <- as.numeric(gsub("[A-G]", "", df$sub_grade)) # substitute all letters A through G with empty space and treat resulting value as continuous
 
 # remove `sub_grade`
-df <- df %>% dplyr::select(-sub_grade)
+# df <- df %>% dplyr::select(-sub_grade)
 ```
 
-**`grade` has 7 levels with values of "A" through "G". `sub_grade` adds a number from 1 to 5 on top of these alphabetical values as a more granular risk rating within each grade. We chose to remove the alphabetical values from `sub_grade` as they are already included in `grade`, allowing `sub_grade` to be treated as continuous. Depending on the performance of `sub_grade_num` in the modeling phase, we may choose to backtrack and drop `grade` instead as the values of `grade` are included within `sub_grade`.**
+**`grade` has 7 levels with values of "A" through "G". `sub_grade` adds a number from 1 to 5 on top of these alphabetical values as a more granular risk rating within each grade. We chose to drop `grade` as the values of `grade` are included within `sub_grade`, therefore all of the predictive power within `grade` is theoretically captured by the more granular `sub_grade`. Depending on the performance of `grade` in the modeling phase, we may choose to backtrack and remove the alphabetical values from `sub_grade` as they are already included in `grade`, allowing `sub_grade_num` to be treated as continuous.**
 
 ```{r}
 # log transforming `annual_inc`
-df$annual_inc_log <- log(df$annual_inc)
+df$annual_inc_log <- log1p(df$annual_inc)
 
 # capping `annual_inc`
-# quantile(df$annual_inc, probs = seq(0.9, 1, 0.001))
-# cap_value <- quantile(df$annual_inc, 0.995)
+# quantile(df$annual_inc, probs = seq(0.9, 1, 0.001)) # print quantiles to visually identify cutoffs
+# cap_value <- quantile(df$annual_inc, 0.995) # assign value of given quantile
 # df$annual_inc_cap <- ifelse(df$annual_inc > cap_value, cap_value, df$annual_inc)
 
 # remove `annual_inc`
@@ -403,8 +399,8 @@ df <- df[-96957, ]
 # df$dti_log <- log1p(df$dti)
 
 # capping `dti`
-# quantile(df$dti, probs = seq(0.9, 1, 0.001))
-cap_value <- quantile(df$dti, 0.999)
+# quantile(df$dti, probs = seq(0.9, 1, 0.001)) # print quantiles to visually identify cutoffs
+cap_value <- quantile(df$dti, 0.999) # assign value of given quantile
 df$dti_cap <- ifelse(df$dti > cap_value, cap_value, df$dti)
 
 # remove `dti`
@@ -418,8 +414,8 @@ df <- df %>% dplyr::select(-dti)
 df$revol_bal_log <- log1p(df$revol_bal)
 
 # capping `revol_bal`
-# quantile(df$revol_bal, probs = seq(0.9, 1, 0.001))
-# cap_value <- quantile(df$revol_bal, 0.996)
+# quantile(df$revol_bal, probs = seq(0.9, 1, 0.001)) # print quantiles to visually identify cutoffs
+# cap_value <- quantile(df$revol_bal, 0.996) # assign value of given quantile
 # df$revol_bal_cap <- ifelse(df$revol_bal > cap_value, cap_value, df$revol_bal)
 
 # remove `revol_bal`
@@ -439,7 +435,7 @@ df$pub_rec_non_bankruptcies <- df$pub_rec - df$pub_rec_bankruptcies
 df$pub_rec_non_bankruptcies <- forcats::fct_collapse(
   df$pub_rec_non_bankruptcies %>% as.character(), 
   "0" = "0",
-  "1+"= as.character(1:max(df$pub_rec_non_bankruptcies)))
+  "1+"= as.character(1:max(df$pub_rec_non_bankruptcies))) # range from 1 to the max value of the variable
 
 table(df$pub_rec_non_bankruptcies)
 
@@ -448,7 +444,7 @@ df$pub_rec_bankruptcies <- forcats::fct_collapse(
   df$pub_rec_bankruptcies %>% as.character(), 
   "0" = "0",
   "1" = "1",
-  "2+" = as.character(2:max(df$pub_rec_bankruptcies)))
+  "2+" = as.character(2:max(df$pub_rec_bankruptcies))) # range from 2 to the max value of the variable
 
 # remove `pub_rec`
 df <- df %>% dplyr::select(-pub_rec)
@@ -459,39 +455,39 @@ table(df$pub_rec_bankruptcies)
 **There are 336 missing values in `pub_rec_bankruptcies`. We chose to impute these missing values with zeroes as the majority of the missing values in `pub_rec_bankruptcies` corresponded to a value of 0 for `pub_rec`, and `pub_rec` by nature includes `pub_rec_bankruptcies`. We then chose to create `pub_rec_non_bankruptcies` as the difference between `pub_rec` and `pub_rec_bankruptcies` to replace `pub_rec` and accommodate for double-counting bankruptcies and any multicollinearity between `pub_rec` and `pub_rec_bankruptcies`. `pub_rec_non_bankruptcies` is zero-dominated and thus very right-skewed. To combat this, we chose to convert `pub_rec_non_bankruptcies` to factor and collapse the categories into 2 levels: "0" and "1+". Additionally, `pub_rec_bankruptcies` is zero-dominated and thus very right-skewed. To combat this, we chose to convert `pub_rec_bankruptcies` to factor and collapse the categories into 3 levels: "0", "1", and "2+". We did this to reduce the number of levels and mitigate data sparsity.**
 
 ```{r}
-# create `non_open_acc` as difference between `total_acc` and `open_acc`
-df$non_open_acc <- df$total_acc - df$open_acc
+# create `closed_acc` as difference between `total_acc` and `open_acc`
+df$closed_acc <- df$total_acc - df$open_acc
 
-# log transforming `non_open_acc`
-# df$non_open_acc_log <- log1p(df$non_open_acc)
+# log transforming `closed_acc`
+# df$closed_acc_log <- log1p(df$closed_acc)
 
-# capping `non_open_acc`
-# quantile(df$non_open_acc, probs = seq(0.9, 1, 0.001))
-# cap_value <- quantile(df$non_open_acc, 0.998)
-# df$non_open_acc_cap <- ifelse(df$non_open_acc > cap_value, cap_value, df$non_open_acc)
+# capping `closed_acc`
+# quantile(df$closed_acc, probs = seq(0.9, 1, 0.001)) # print quantiles to visually identify cutoffs
+# cap_value <- quantile(df$closed_acc, 0.998) # assign value of given quantile
+# df$closed_acc_cap <- ifelse(df$closed_acc > cap_value, cap_value, df$closed_acc)
 
-# combining `non_open_acc` into 10 bins
-df$non_open_acc_bins <- cut(
-  df$non_open_acc,
-  breaks = quantile(df$non_open_acc, probs = seq(0, 1, 0.1)),
+# combining `closed_acc` into 10 semi-equal width bins
+df$closed_acc_bins <- cut(
+  df$closed_acc,
+  breaks = quantile(df$closed_acc, probs = seq(0, 1, 0.1)),
   include.lowest = TRUE
 )
 
-# remove `open_acc`, `total_acc`, and `non_open_acc`
-df <- df %>% dplyr::select(-open_acc, total_acc, -non_open_acc)
+# remove `open_acc`, `total_acc`, and `closed_acc`
+df <- df %>% dplyr::select(-open_acc, total_acc, -closed_acc)
 
-table(df$non_open_acc_bins)
+table(df$closed_acc_bins)
 ```
 
-**We then chose to create `non_open_acc` as the difference between `pub_rec` and `total_acc` to replace `open_acc` and accommodate for double-counting open accounts and any multicollinearity between `total_acc` and `open_acc`. `total_acc` is zero-dominated and thus very right-skewed. `non_open_acc` is very right-skewed with a couple large outliers. We chose to bin `non_open_acc` into 10 relatively equal-width bins to reduce the total levels and retain interpretability. Depending on the performance of `open_acc_bins` in the modeling phase, we may choose to backtrack and either perform a log1p (accounting for values of "0") transformation on `open_acc` to make the distribution close to normal and more symmetric, or cap `open_acc` to the 99.8th percentile to limit the influence of the large outliers on future analysis.**
+**We then chose to create `closed_acc` as the difference between `pub_rec` and `total_acc` to replace `open_acc` and accommodate for double-counting open accounts and any multicollinearity between `total_acc` and `open_acc`. `total_acc` is zero-dominated and thus very right-skewed. `closed_acc` is very right-skewed with a couple large outliers. We chose to bin `closed_acc` into 10 relatively equal-width bins to reduce the total levels and retain interpretability. Depending on the performance of `open_acc_bins` in the modeling phase, we may choose to backtrack and either perform a log1p (accounting for values of "0") transformation on `open_acc` to make the distribution close to normal and more symmetric, or cap `open_acc` to the 99.8th percentile to limit the influence of the large outliers on future analysis.**
 
 ```{r}
 # impute missing values of `revol_util` as 0
 df$revol_util <- ifelse(is.na(df$revol_util), 0, df$revol_util)
 
 # capping `revol_util`
-# quantile(df$revol_util, probs = seq(0.9, 1, 0.001))
-cap_value <- quantile(df$revol_util, 0.999)
+# quantile(df$revol_util, probs = seq(0.9, 1, 0.001)) # print quantiles to visually identify cutoffs
+cap_value <- quantile(df$revol_util, 0.999) # assign value of given quantile
 df$revol_util_cap <- ifelse(df$revol_util > cap_value, cap_value, df$revol_util)
 
 # remove `revol_util`
@@ -517,7 +513,7 @@ df$mths_since_last_delinq <- factor(df$mths_since_last_delinq)
 # impute missing values of `mths_since_last_delinq as "Never"
 df$mths_since_last_delinq <- ifelse(is.na(df$mths_since_last_delinq), "Never", df$mths_since_last_delinq)
 
-# recode `mths_since_last_delinq` to years
+# recode `mths_since_last_delinq` to year ranges from character-converted months
 df$yrs_since_last_delinq <- df$mths_since_last_delinq %>%
   as.character() %>%
   fct_collapse(
@@ -528,14 +524,7 @@ df$yrs_since_last_delinq <- df$mths_since_last_delinq %>%
     "3-4yr" = as.character(36:47),
     "4-5yr" = as.character(48:59),
     "5-6yr" = as.character(60:71),
-    ">6yr" = as.character(72:max(as.numeric(df$mths_since_last_delinq[df$mths_since_last_delinq != "Never"]))))
-    # "7-8yr"   = as.character(84:95),
-    # "8-9yr"   = as.character(96:107),
-    # "9-10yr"  = as.character(108:119),
-    # "10-11yr" = as.character(120:131),
-    # "11-12yr" = as.character(132:143),
-    # "12-13yr" = as.character(144:155),
-    # "13-14yr" = as.character(156:max(as.numeric(df$mths_since_last_delinq[df$mths_since_last_delinq != "Never"]))))
+    ">6yr" = as.character(72:max(as.numeric(df$mths_since_last_delinq[df$mths_since_last_delinq != "Never"])))) # range from 72 to the max value of the variable
 
 # reorder the levels of `yrs_since_last_delinq`
 df$yrs_since_last_delinq <- forcats::fct_relevel(df$yrs_since_last_delinq, "Never", "<1yr", "1-2yr", "2-3yr", "3-4yr", "4-5yr", "5-6yr", ">6yr")
@@ -551,9 +540,9 @@ table(df$yrs_since_last_delinq)
 ```{r}
 # recategorizing `last_credit_pull_d` into years since
 df$last_credit_pull_d_date <- my(df$last_credit_pull_d)
-df$last_credit_pull_d_years_since <- year(Sys.Date()) - year(df$last_credit_pull_d_date)
+df$last_credit_pull_d_years_since <- year(Sys.Date()) - year(df$last_credit_pull_d_date) # difference between current year and year of issue date
 
-# impute missing values of `last_credit_pull_d_years_since as "Never"
+# impute blank values of `last_credit_pull_d_years_since as "Never"
 df$last_credit_pull_d_years_since <- factor(ifelse(is.na(df$last_credit_pull_d_years_since), "Never", df$last_credit_pull_d_years_since))
 
 # regroup `last_credit_pull_d_years_since` to year ranges
@@ -565,7 +554,7 @@ df$last_credit_pull_d_years_since <- df$last_credit_pull_d_years_since %>%
     "7" = "7",
     "8" = "8",
     "9" = "9",
-    "10+" = as.character(10:18))
+    "10+" = as.character(10:18)) # range from 10 to 18
 
 # reorder the levels of `last_credit_pull_d_years_since`
 df$last_credit_pull_d_years_since <- forcats::fct_relevel(df$last_credit_pull_d_years_since, "Never", "6", "7", "8", "9", "10+")
@@ -581,22 +570,22 @@ table(df$last_credit_pull_d_years_since)
 ```{r}
 # clean `emp_title`
 df$emp_title_clean <- df$emp_title %>%
-  as.character() %>%
-  str_trim() %>%
-  str_to_lower()
+  as.character() %>% # convert to character
+  str_trim() %>% # remove all trailing or leading spaces
+  str_to_lower() # convert all letters to lowercase
 
 # count the alphabetical, non-modifier words in `emp_title_clean`
 word_counts <- df %>%
   select(emp_title_clean) %>%
-  unnest_tokens(word, emp_title_clean) %>%
-  filter(!word %in% stop_words$word,
-         str_detect(word, "[a-z]")) %>%
+  unnest_tokens(word, emp_title_clean) %>% # split into words
+  filter(!word %in% stop_words$word, # remove common prepositions, conjunctions, and modifiers
+         str_detect(word, "[a-z]")) %>% # keep only letters
   count(word, sort = TRUE)
 
-# grab the most common words
+# grab the 200 most common words
 common_words <- head(word_counts, 200)
 
-# group `emp_title` into broad categories based on the most common words
+# group `emp_title` into broad categories based on the most common words by pattern matching using regex()
 df$emp_title_group <- case_when(
   str_detect(df$emp_title_clean, regex("teach|school|professor|instructor|principal|university|education|college", ignore_case = TRUE)) ~ "Education",
   str_detect(df$emp_title_clean, regex("nurse|rn|clinical|therapist|physician|healthcare|dental|pharmacy|technologist|nursing", ignore_case = TRUE)) ~ "Healthcare",
@@ -632,7 +621,7 @@ levels(df$emp_title_group)
 
 ```{r}
 # recode `term` to years for consistency, and remove leading spaces
-df$term <- ifelse(df$term == " 36 months", "3 Years", "5 Years")
+df$term <- as.factor(ifelse(df$term == " 36 months", "3 Years", "5 Years"))
 
 table(df$term)
 ```
@@ -646,7 +635,7 @@ df$mort_acc_NA <- ifelse(is.na(df$mort_acc), 1, 0)
 # impute missing values of `mort_acc` as median of `home_ownership` groupings
 df <- df %>%
   group_by(home_ownership) %>%
-  mutate(mort_acc = ifelse(is.na(mort_acc), median(mort_acc, na.rm = TRUE), mort_acc)) %>%
+  mutate(mort_acc = ifelse(is.na(mort_acc), median(mort_acc, na.rm = TRUE), mort_acc)) %>% # impute median of `mort_acc` for each group
   ungroup()
 
 # recode `mort_acc` into 5 levels
@@ -656,7 +645,7 @@ df$mort_acc <- forcats::fct_collapse(
   "1" = "1",
   "2" = "2",
   "3-4" = as.character(3:4),
-  "5+" = as.character(5:max(df$mort_acc)))
+  "5+" = as.character(5:max(df$mort_acc))) # range from 72 to the max value of the variable
 
 # reorder levels of `mort_acc`
 df$mort_acc <- forcats::fct_relevel(df$mort_acc, "0", "1", "2", "3-4", "5+")
@@ -666,7 +655,26 @@ table(df$mort_acc)
 
 **There are 22854 missing values in `mort_acc`. We chose to impute these missing values with the median of the given level of `home_ownership` for each corresponding observation. Since `mort_acc` seems to logically be related to `home_ownership` in some fashion, we chose to impute using `home_ownership` rather than just simple imputation. `mort_acc` is zero-dominated and thus very right-skewed. To combat this, we chose to convert `mort_acc` to factor and collapse the categories into 5 levels: "0", "1", "2", "3-4", and "5+". We did this to avoid issues with skew, mitigate data sparsity, and classify larger values of `mort_acc` as equal.**
 
-```{r}
-colnames(df)
-```
+## Additional Comments
 
+write about probable interactions
+
+write about dropping uninformative variables 
+
+```{r}
+# display a list of variables in the data
+# colnames(df)
+
+# create a set of probable two-variable interactions in the data
+df <- df %>%
+  mutate(int_mort_home = paste0(home_ownership, "_", mort_acc))
+
+df <- df %>%
+  mutate(int_dti_income = dti_cap * annual_inc_log)
+
+df <- df %>%
+  mutate(int_fico_loan = fico_range_avg * loan_amnt)
+
+df <- df %>%
+  mutate(int_loan_income = loan_amnt * annual_inc_log)
+```
