@@ -96,12 +96,16 @@ The goal of this phase is to explore the dataset, understand its structure, dete
 skimr::skim(df)
 ```
 
+**The initial training dataset has 237,730 observations of 36 variables. converting all character variables to factors upon loading the csv; there are 18 factor variables and 18 numeric variables.** 
+
 ### Missing Data
 
 ```{r}
 # view missing values
 DataExplorer::plot_missing(df)
 ```
+
+**There are 4 variables (`revol_util`, `pub_rec_bankruptcies`, `mort_acc`, and `mths_since_last_delinq`) that have missing values, only `mths_since_last_delinq` has over 10% missing and `mort_acc` has just shy of 10% missing.** 
 
 ```{r}
 # view blank values
@@ -119,12 +123,17 @@ colSums(df == "", na.rm = TRUE)
 DataExplorer::plot_bar(df, by="loan_default", nrow=2, ncol=3)
 ```
 
+**From these bar charts there appears to be some factor levels from a number of the variables that are associated with a higher rate of loan default. The rate of defaulting appears to increase as the `grade` and `sub_grade` of the loan decreases. The similarities in the two variables and their association with loan default suggests to us that it may be wise to drop one of the two variables during cleaning and wrangling. There seems to be greater rates of default for 60 month loans compared to 36 month loans. Loan default seems to be fairly constant relative to `emp_length`, however, when there is a blank value for the variable there seems to be a slight increase. There seems to be a similar pattern for the small business level of the `purpose` variable. There also appears to be a difference for the loan defaulting when `application_type` is direct pay and when `dept_settlement_flag` is yes.**
+
+
 ### Histogram Plots
 
 ```{r}
 # view distributions of numeric variables
 DataExplorer::plot_histogram(df, nrow=3, ncol=3)
 ```
+
+**The histograms of the numeric variables show all of the variables to have varying degrees of right skews, most being heavily skewed, and some variables that appear to have a multimodal distribution. To address this we will explore transforming or capping some variables and investigate outliers to discern the cause/validity of those observations. There are also some variables that may function better for our purposes as factors instead of numeric.**
 
 ### Correlation Matrix
 
@@ -134,6 +143,8 @@ DataExplorer::plot_correlation(df,
                                type = "continuous",
                                cor_args = list("use" = "pairwise.complete.obs"))
 ```
+
+**Looking at the correlation matrix, there are a handful of variables that are highly correlated with each other: `installment` and `loan_amnt`, `total_acc` and `open_acc`, `pub_rec` and `pub_rec_bankruptcies`, `delinq_2yrs` and `mths_since_last_delinq`, and `fico_range_low` and `fico_range_high`. We will be looking at these each of these pairings more in depth to assess if we can eliminate any of them or if we can manipulate them together to create another variable with more meaningful information.**
 
 ### Violin Plots
 
@@ -664,7 +675,7 @@ table(df$mort_acc)
 
 ## Additional Comments
 
-* **We have also considered probable two-variable interactions within the data, however, we have not added any into the data frame yet. Depending on the types of predictive models we fit later on, we intend to either add in interactions (e.g. logistic regression) or account for implied interactions (e.g. random forest). Below are the top four most probable two-variable interactions in the data that we believe would have predictive power.**
+* **We have also considered probable two-variable interactions within the data, however, we have not added any into the data frame yet. Depending on the types of predictive models we fit later on, we intend to either add in interactions (e.g. logistic regression) or account for implied interactions (e.g. random forest). Below are four two-variable interactions in the data that we believe would logically have predictive power.**
 
 ```{r}
 # display a list of variables in the data
@@ -685,3 +696,10 @@ table(df$mort_acc)
 ```
 
 * **In our EDA, we did not consider the predictive power or significance of variables by fitting any form of logistic regression model. We chose to rely on logic, domain knowledge, and visual insights in making our initial data cleaning, dimension reduction, and encoding decisions. Therefore, we acknowledge there may be a few variables still present in the data that will prove to be uninformative and lack predictive power upon model fitting.**
+
+# Save as RDS
+
+```{r}
+saveRDS(df, file = "group9A_Berry-Cradduck_train.rds")
+```
+
