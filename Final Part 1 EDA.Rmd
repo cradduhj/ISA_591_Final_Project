@@ -103,6 +103,13 @@ skimr::skim(df)
 DataExplorer::plot_missing(df)
 ```
 
+```{r}
+# view blank values
+colSums(df == "", na.rm = TRUE)
+```
+
+**In addition to checking the missing values, we noticed that there are also blank values that may need to be dealt with. Specifically, `emp_title`, `emp_length`, `title`, and `last_credit_pull_d` have blank values that may have meaning, or not.**
+
 ## Data Visualization
 
 ### Frequency Plots
@@ -474,7 +481,7 @@ df$closed_acc_bins <- cut(
 )
 
 # remove `open_acc`, `total_acc`, and `closed_acc`
-df <- df %>% dplyr::select(-open_acc, total_acc, -closed_acc)
+df <- df %>% dplyr::select(-open_acc, -total_acc, -closed_acc)
 
 table(df$closed_acc_bins)
 ```
@@ -657,24 +664,24 @@ table(df$mort_acc)
 
 ## Additional Comments
 
-write about probable interactions
-
-write about dropping uninformative variables 
+* **We have also considered probable two-variable interactions within the data, however, we have not added any into the data frame yet. Depending on the types of predictive models we fit later on, we intend to either add in interactions (e.g. logistic regression) or account for implied interactions (e.g. random forest). Below are the top four most probable two-variable interactions in the data that we believe would have predictive power.**
 
 ```{r}
 # display a list of variables in the data
 # colnames(df)
 
 # create a set of probable two-variable interactions in the data
-df <- df %>%
-  mutate(int_mort_home = paste0(home_ownership, "_", mort_acc))
-
-df <- df %>%
-  mutate(int_dti_income = dti_cap * annual_inc_log)
-
-df <- df %>%
-  mutate(int_fico_loan = fico_range_avg * loan_amnt)
-
-df <- df %>%
-  mutate(int_loan_income = loan_amnt * annual_inc_log)
+# df <- df %>%
+#   mutate(int_mort_home = paste0(home_ownership, "_", mort_acc))
+# 
+# df <- df %>%
+#   mutate(int_dti_income = dti_cap * annual_inc_log)
+# 
+# df <- df %>%
+#   mutate(int_fico_loan = fico_range_avg * loan_amnt)
+# 
+# df <- df %>%
+#   mutate(int_loan_income = loan_amnt * annual_inc_log)
 ```
+
+* **In our EDA, we did not consider the predictive power or significance of variables by fitting any form of logistic regression model. We chose to rely on logic, domain knowledge, and visual insights in making our initial data cleaning, dimension reduction, and encoding decisions. Therefore, we acknowledge there may be a few variables still present in the data that will prove to be uninformative and lack predictive power upon model fitting.**
