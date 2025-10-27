@@ -1,6 +1,36 @@
 # ISA_591_Final_Project
 This is a GitHub repository for our ISA 591 Final project.
 
+# Part 2: Tree-Based Models
+In this phase, you will use the clean, preprocessed loan default data to develop three tree-based models and evaluate their effectiveness on the dataset.  For this part of the project, use your preprocessed training data to develop three models, described below.
+
+## Decision Trees: Using the pruning method we discussed in class, develop the best single decision tree model that you can.  You may experiment with different trees until you find the one that is the best in terms of prediction.  
+Random Forest: Using the methods we discussed in class, develop the best Random Forest tree that you can.  Tune hyperparameters to improve model performance. 
+XGBoost: Using the methods we discussed in class, develop the best XGBoost model that you can.  Tune hyperparameters to improve model performance.
+
+## Adjusting Probability Threshold
+You may need to adjust the probability threshold when necessary. In other words, using 50% as the default threshold of the models might NOT be optimal. Checking for other thresholds can be helpful. You are expected to check for a different optimal cutoff. Each of the models you fit may have a different threshold.
+
+## Balancing the training sample
+You should consider balancing the training sample by UNDERSAMPLING the majority class.  Do not oversample the minority class, or you will run into significant computational resource issues (i.e., your model-fitting algorithms will never converge).  Balancing the training sample can improve model performance, but it does not always do so.  Part of your investigation is to consider both unbalanced and balanced training samples, and decide which works best for your models.
+
+## Selecting your Best Tree-Based Model
+After training each model above, evaluate and compare them on the test set (remember, this data set is NOT oversampled) using a variety of metrics to understand their strengths and weaknesses. 
+
+Common metrics include:
+
+Accuracy: The proportion of correct predictions out of the total number of predictions, giving a general sense of the model’s effectiveness.
+Precision: The number of true positive predictions divided by the sum of true positive and false positive predictions, indicating the accuracy of positive predictions.
+Recall: The number of true positive predictions divided by the sum of true positives and false negatives, showing the model’s ability to identify all relevant instances.
+F1 Score: The harmonic mean of precision and recall, providing a balanced measure when there is an uneven class distribution. This is the metric used to rank the final predictions in Part 5.
+ROC-AUC (Receiver Operating Characteristic - Area Under Curve): A measure of the model’s ability to discriminate between positive and negative classes across various thresholds, offering insight into performance beyond a single cutoff.
+Comparison of Results: Comparing models trained on the original and test datasets allows students to assess the impact of class-imbalance handling techniques, hyperparameter values, and other aspects of the model.  You should reflect on each model’s performance to understand the trade-offs between complexity, interpretability, and accuracy. You must decide which is your BEST TREE-BASED Model.
+
+## Part 2 Final Deliverable
+Three knitted RMarkdown files containing the development and evaluation of the best (1) single tree model, (2) random forest model, and (3) XGBoost Model. These files should be organized and fully documented with both inline documentation in code blocks and text annotation (not in code blocks) that explain and interpret the model-building process.  I do not need to see everything you tried, but I do need to see the final steps you used to create the best of each model type.  
+A fourth knitted Rmarkdown file that compares the performance of the three models and gives your rationale for the BEST TREE-BASED Model.  This file should contain a discussion of why you selected the model you chose as BEST.  
+**Important Note**  RMD files will not be accepted.  You have four files to turn in.  They should be named as follows: group#section_last1-last2_modeltype.html. I have been very forgiving of students who have turned in the wrong files (e.g., RMD rather than HTML) or have not turned in all of the files.  There will be no leniency on incorrect/incomplete file uploads for this or future assignments.  It is your and your partner's responsibility to double-check the files you uploaded.  
+
 # Part 1: EDA
 
 ## Objective:
