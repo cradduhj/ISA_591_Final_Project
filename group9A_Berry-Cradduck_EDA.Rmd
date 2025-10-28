@@ -241,7 +241,7 @@ df <- df %>% dplyr::select(-hardship_flag)
 df <- df %>% dplyr::select(-installment)
 ```
 
-**We chose to remove `installment` from the data since it is nearly perfectly collinear with `loan_amnt`, `loan_amnt` seems more fundamental than `installment`, and `installment` could most likely be calculated using `lona_amnt`, `term`, and `int_rate`.**
+**We chose to remove `installment` from the data since it is nearly perfectly collinear with `loan_amnt`, `loan_amnt` seems more fundamental than `installment`, and `installment` could most likely be calculated using `loan_amnt`, `term`, and `int_rate`.**
 
 ```{r}
 # remove `title`
@@ -702,4 +702,3 @@ table(df$mort_acc)
 ```{r}
 saveRDS(df, file = "group9A_Berry-Cradduck_train.rds")
 ```
-
