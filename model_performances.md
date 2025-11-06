@@ -5,3 +5,5 @@ rf.cv(100trees/25nodesize/10folds)| downsampled | 0.7798205 | 0.7708548 | 0.7820
 
 rf.cv(100trees/25nodesize/10folds)| downsampled 1hot dummies| 0.7796437 | 0.7703399| 0.7819141 | 0.8508873 | 0.5783319 | 35
 *i calculated, but have not implemented optimal cutoff and f1 - 0.62 cutoff and 0.5935158	f1*
+
+xgb.cv(5folds,5tuneLength) | downsampled | 0.8289 | 0.6453 | 0.8738 | 0.855 | 0.59... | N/A
