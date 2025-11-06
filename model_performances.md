@@ -1,2 +1,2 @@
-Train Data | Accuracy | Sensitivity | Specificity | AUC | F1 | mtry
+Model Type | Train Data | Accuracy | Sensitivity | Specificity | AUC | F1 | mtry
 
