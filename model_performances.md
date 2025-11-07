@@ -10,4 +10,8 @@ xgb.cv(10folds/5tuneLength/.611...threshold) | downsampled | 0.8156416 | 0.69554
 
 xgb.cv(10folds/5tuneLength/.644...threshold) | downsampled 1 hot dummies | 0.823972 | 0.6708290 | 0.8613009 | 0.8562651 | 0.5991721 | N/A
 
-xgb.cv(5folds,5tuneLength) | downsampled | 0.8289 | 0.6453 | 0.8738 | 0.855 | 0.59 | N/A
+xgb.cv(5folds,5tuneLength, 0.618) | better downsampled | 0.8289 | 0.6453 | 0.8738 | 0.855 | 0.59716 | N/A
+
+xgb.cv(5folds,5tuneLength,0.634) | better important downsampled | 0.8224 | 0.6702 | 0.8595 | 0.8556 | 0.5967959 | N/A
+
+xgb.cv(5folds,5tuneLength,0.6703 | downsampled | 0.8289 | 0.6453 | 0.8737 | 0.8558 | 0.5966552 | N/A
