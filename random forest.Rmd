@@ -30,93 +30,167 @@ if (!require(mlba)) {
 pacman::p_load(mlba, tidyverse)
 ```
 
-# loading in training and holdout data
+# Introduction
+
+**Using the methods we discussed in class, develop the best Random Forest tree that you can.  Tune hyperparameters to improve model performance.**
+
+# Loading in Data
 
 ```{r}
-# read in training and holdout datsets
+# read in training and holdout datsets edited specifically for our decision tree models
 train <- readr:: read_rds('decision_tree_train.rds')
+
 holdout <- readr::read_rds('decision_tree_holdout.rds')
 ```
 
 ```{r}
-# downsampling the majority class
+# set seed for ability to reproduce downsampleing and modeling
 set.seed(123)
+```
+
+#Downsampling
+
+**For our Random Forest models we decided to move forward with just the downsampled data for the sake of computational complexity**
+
+```{r}
+# downsampling the majority class
 train.ds <- caret::downSample(x = train %>% 
                     dplyr::select(-loan_default),
                   y = train$loan_default,
                   yname = "loan_default")
 table(train.ds$loan_default)
 ```
-# setting up parallel processing
+
+# 1-Hot Dummy Encoding
+
+## Training Data
 
 ```{r}
-cores = parallel::detectCores()
-cores
+# creating the dummies on the training data 
+dummies <- caret::dummyVars(~ . - loan_default, 
+                            data = train.ds,
+                            fullRank = FALSE)
+# excluding the response variable so it remains in the same form in all our models
 ```
 
 ```{r}
+# making the dataframe for the dummies and reintroducing the observed class
+train.dummy <- data.frame(predict(dummies, newdata = train.ds))
+
+train.dummy <- cbind(train.dummy, loan_default = train.ds$loan_default)
+```
+
+## Holdout Data
+
+```{r}
+# creating the dummies on the holdout data 
+dummies <- caret::dummyVars(~ . - loan_default, 
+                            data = holdout,
+                            fullRank = FALSE)
+# excluding the response variable so it remains in the same form in all our models
+```
+
+```{r}
+# making the dataframe for the dummies and reintroducing the observed class
+holdout.dummy <- data.frame(predict(dummies, newdata = holdout))
+
+holdout.dummy <- cbind(holdout.dummy, loan_default = holdout$loan_default)
+```
+
+# Modeling
+
+```{r}
+#set up parallel processing for running the models
+cores = parallel::detectCores()
+cores
+
 c1 <- parallel::makeCluster(8)
 registerDoParallel(c1)
 ```
 
-# training Random Forest model 
-cross validating to select mtry parameter
+##Training a Random Forest on the Regular, Downsampled Data 
+
 
 ```{r}
+# cross validating to select mtry parameter
+
 # set up train control
 cv_control <- trainControl(method = 'cv', number = 10, allowParallel = TRUE)
 
-# define grid of `mtry` values to search over
+# define grid of mtry values to search over
 mtry_grid <- expand.grid(mtry = seq(1, ncol(train.ds) - 1, by = 1))
 ```
 
+**We used 10 fold cross validation to find the best mtry value from 1 to the number of variables in our downsampled data**
+
 ```{r}
 # train the random forest model with cross validation
-rf_cv <- caret::train(loan_default ~ .,
-                      data = train.ds,
-                      method = 'rf',
-                      trControl = cv_control,
-                      tuneGrid = mtry_grid,
-                      ntree = 100,
-                      importance = TRUE,
-                      nodesize = 25)
+# rf_cv <- caret::train(loan_default ~ .,
+#                       data = train.ds,
+#                       method = 'rf',
+#                       trControl = cv_control,
+#                       tuneGrid = mtry_grid,
+#                       ntree = 100,
+#                       importance = TRUE,
+#                       nodesize = 25)
+
+# saveRDS(rf_cv, 'random_forest.rds')
+```
+
+```{r}
+# read in the previously saved model
+rf_cv <- readr::read_rds('random_forest.rds')
+# print the model summary
 rf_cv
 ```
 
+**We fit our first random forest model on the down sampled training data. We used 100 trees with a minimum node size of 25. The mtry that was selected for the final model was 28.**
 
-# stop parallel processsing
+##Training a Random Forest on the 1-Hot Dummy Encoded, Downsampled Data
 
 ```{r}
+# train the random forest model with cross validation on 1 hot encoded training downsampled data
+# rf_cv_dmy <- caret::train(loan_default ~ .,
+#                       data = train.dummy,
+#                       method = 'rf',
+#                       trControl = cv_control,
+#                       tuneGrid = mtry_grid,
+#                       ntree = 100,
+#                       importance = TRUE,
+#                       nodesize = 25)
+#
+#saveRDS(rf_cv_dmy, 'random_forest_dmy.rds')
+```
+
+```{r}
+# read in the previously saved dummy encoded model
+rf_cv_dmy <- read_rds('random_forest_dmy.rds')
+# print the model summary
+rf_cv_dmy
+```
+
+**We fit our second random forest model on 1-Hot dummy encoded training data. We also set the number of trees to 100 and minimum nodesize to 25 for this model. The mtry for this random forest model was 35**
+
+```{r}
+# stop parallel processsing
 stopCluster(c1)
 registerDoSEQ()
 ```
 
+# Model Evaluation
+
 ```{r}
-rf_cv <- readr::read_rds('random_forest.rds')
+# creating a dataframe to house all the holdout predictions for these models and 
+pred.holdout <- data.frame(loan_default = holdout$loan_default)
 ```
 
-# evaluating model
+## Downsampled Model
 
 ```{r}
-# read in the predictions from the pruned decision trees
-pred.holdout <- readr::read_rds('holdout_predictions.rds')
-```
-
-```{r}
-# save predictions from the random forest model
-#pred.holdout$rf_cv_class <- predict(rf_cv,
-                                    #newdata = holdout,
-                                    #type = 'raw')
+# save predicted probability for the holdout data
 pred.holdout$rf_cv_prob <- predict(rf_cv,
                                    newdata = holdout,
                                    type = 'prob')[,'Yes']
-```
-
-```{r}
-# print a confusion matrix for the random forest model
-caret::confusionMatrix(pred.holdout$rf_cv_class,
-                       pred.holdout$loan_default,
-                       positive = 'Yes')
 ```
 
 ```{r}
@@ -162,14 +236,22 @@ opt_f1 <- df_f1[opt_idx,]
 opt_f1
 ```
 
-
-
 ```{r}
+# using the max f1 score for the model to set the probability threshold save the predicted class based on that threshold. 
 best_thresh <- 0.63
 pred.holdout$rf_cv_class <- factor(
   ifelse(pred.holdout$rf_cv_prob >= best_thresh, 
          'Yes', 'No'))
 ```
+
+```{r}
+# print a confusion matrix for the random forest model
+caret::confusionMatrix(pred.holdout$rf_cv_class,
+                       pred.holdout$loan_default,
+                       positive = 'Yes')
+```
+
+**The model trained on the regular downsampled data has an optimal predicted probability threshold of 0.63 based on maximizing the f1 score, which was 0.5922998. The other important metrics are as follow: AUC = 0.8504582, Accuracy = 0.819, Sensitivity = 0.6704, Specificity = 0.8552** 
 
 ```{r}
 # variable importance
@@ -180,137 +262,41 @@ caret::varImp(rf_cv, type = 2)
 randomForest::varImpPlot(rf_cv$finalModel, type = 2)
 ```
 
-```{r}
-saveRDS(rf_cv, 'random_forest.rds')
-```
+**We evaluated the variable importance for the model and fount that years since last credit pull was by far the most important variable in the model with interest rate, debt settlement flag (yes), and dti being the next most important variables.**
+
+## 1-Hot Dummy Encoded, Downsampled Model
 
 ```{r}
-# comparing the important model metrics into one dataframe
-
-# saving the observed classifications
-truth <- pred.holdout$loan_default
-
-# Get model names based on .prob columns
-model_names <- names(pred.holdout) %>%
-  stringr::str_subset("\\_prob$") %>%
-  stringr::str_remove("\\_prob$")
-
-# Function to compute metrics for each model
-get_metrics <- function(model_name) {
-  prob_col <- paste0(model_name, "_prob")
-  class_col <- paste0(model_name, "_class")
-
-  # Extract predictions
-  prob <- pred.holdout[[prob_col]]
-  pred <- factor(pred.holdout[[class_col]], levels = c("No", "Yes"))
-
-  # Confusion matrix
-  cm <- caret::confusionMatrix(pred, truth, positive = "Yes")
-
-  # AUC
-  roc_obj <- pROC::roc(truth, prob, quiet = TRUE)
-
-  # Metrics
-  data.frame(
-    Model = model_name,
-    Accuracy = cm$overall["Accuracy"],
-    Sensitivity = cm$byClass["Sensitivity"],
-    Specificity = cm$byClass["Specificity"],
-    F1 = MLmetrics::F1_Score(
-      y_pred = pred,
-      y_true = truth,
-      positive = "Yes"
-    ),
-    AUC = as.numeric(roc_obj$auc)
-  )
-}
-
-# Apply to all models
-results_df <- dplyr::bind_rows(lapply(model_names, get_metrics))
-
-# Remove row names and display
-rownames(results_df) <- NULL
-print(results_df)
-```
-
-```{r}
-#saving holdout dataframe to be used with other models
-saveRDS(pred.holdout, 'holdout_predictions.rds')
-```
-
-
-# 1 hot dummy data
-
-```{r}
-# train the random forest model with cross validation on 1 hot encoded training downsampled data
-# rf_cv_dmy <- caret::train(loan_default ~ .,
-#                       data = train.dummy,
-#                       method = 'rf',
-#                       trControl = cv_control,
-#                       tuneGrid = mtry_grid,
-#                       ntree = 100,
-#                       importance = TRUE,
-#                       nodesize = 25)
-# rf_cv_dmy
-```
-
-```{r}
-#saveRDS(rf_cv_dmy, 'random_forest_dmy.rds')
-```
-
-
-```{r}
-rf_cv_dmy <- read_rds('random_forest_dmy.rds')
-```
-
-```{r}
-# 1 hot dummy encoding. 
-dummies <- caret::dummyVars(~ . - loan_default, 
-                            data = holdout,
-                            fullRank = FALSE)
-```
-
-```{r}
-holdout.dummy <- data.frame(predict(dummies, newdata = holdout))
-
-holdout.dummy <- cbind(holdout.dummy, loan_default = holdout$loan_default)
-```
-
-```{r}
-# save predictions from the random forest model
-#pred.holdout$rf_cv_dmy_class <- predict(rf_cv_dmy,
-                                    #newdata = holdout.dummy,
-                                    #type = 'raw')
+# save predicted probability for the dummy encoded holdout data
 pred.holdout$rf_cv_dmy_prob <- predict(rf_cv_dmy,
                                    newdata = holdout.dummy,
                                    type = 'prob')[,'Yes']
 ```
 
-
 ```{r}
 # computing ROC of curve
-pred <- ROCR::prediction(pred.holdout$rf_cv_dmy_prob,
+pred2 <- ROCR::prediction(pred.holdout$rf_cv_dmy_prob,
                          pred.holdout$loan_default)
-perf <- ROCR::performance(pred, 'tpr', 'fpr')
+perf2 <- ROCR::performance(pred, 'tpr', 'fpr')
 ```
 
 ```{r}
 # plotting ROC curve
-plot(perf, col = 'blue', lwd = 2, main = 'ROC Curve for Cross-Validated Training Model')
+plot(perf2, col = 'blue', lwd = 2, main = 'ROC Curve for Cross-Validated Training Model')
 abline(a = 0, b = 1, col = 'red', lty = 2, lwd =2)
 ```
 
 ```{r}
 # AUC of above curve
-ROCR::performance(pred, 'auc')@y.values[[1]]
+ROCR::performance(pred2, 'auc')@y.values[[1]]
 ```
 
 ```{r}
 # finding the optimal threshold
 
 #finding precision and recall
-prec <- ROCR::performance(pred, 'prec')
-rec <- ROCR::performance(pred, 'rec')
+prec <- ROCR::performance(pred2, 'prec')
+rec <- ROCR::performance(pred2, 'rec')
 
 # extracting precision and recall
 precision <- prec@y.values[[1]]
@@ -330,9 +316,8 @@ opt_f1 <- df_f1[opt_idx,]
 opt_f1
 ```
 
-
-
 ```{r}
+# using the max f1 score for the model to set the probability threshold save the predicted class based on that threshold. 
 best_thresh <- 0.62
 pred.holdout$rf_cv_dmy_class <- factor(
   ifelse(pred.holdout$rf_cv_dmy_prob >= best_thresh, 
@@ -345,6 +330,7 @@ caret::confusionMatrix(pred.holdout$rf_cv_dmy_class,
                        pred.holdout$loan_default,
                        positive = 'Yes')
 ```
+**The model trained on the regular downsampled data has an optimal predicted probability threshold of 0.62 based on maximizing the f1 score, which was 0.5935158. The other important metrics are as follow: AUC = 0.8508873, Accuracy = 0.8172, Sensitivity = 0.6805, Specificity = 0.8505**
 
 ```{r}
 # variable importance
@@ -355,9 +341,9 @@ caret::varImp(rf_cv_dmy, type = 2)
 randomForest::varImpPlot(rf_cv_dmy$finalModel, type = 2)
 ```
 
-```{r}
-#saveRDS(rf_cv_dmy, 'random_forest.rds')
-```
+**We evaluated the variable importance for the model and fount that years since last credit pull was by far the most important variable in the model with interest rate being the next most important before seeing another drastic dropoff in importance.**
+
+# Model Comparison
 
 ```{r}
 # comparing the important model metrics into one dataframe
@@ -407,7 +393,35 @@ results_df <- dplyr::bind_rows(lapply(model_names, get_metrics))
 rownames(results_df) <- NULL
 print(results_df)
 ```
+
 ```{r}
-saveRDS(results_df, 'model_performances.rds')
+# compare models by plotting ROC curves
+roc_ds <- pROC::roc(holdout$loan_default, 
+                    predict(rf_cv, 
+                            holdout, 
+                            type = "prob")[, "Yes"])
+roc_ds_dmy <- pROC::roc(holdout.dummy$loan_default, 
+                        predict(rf_cv_dmy, 
+                                holdout.dummy, 
+                                type = "prob")[, "Yes"])
+
+plot(roc_ds, col = "blue", lwd = 2, main = "ROC Curves for Random Forest Models")
+plot(roc_ds_dmy, add = TRUE, col = "red", lwd = 2)
+
+legend("bottomright",
+       legend = c(
+         paste0("Downsampled AUC = ", 
+                ROCR::performance(pred, 'auc')@y.values[[1]]),
+         paste0("1Hot Dummy AUC = ", 
+                ROCR::performance(pred2, 'auc')@y.values[[1]])
+       ),
+       col = c("blue", "red", "darkgreen"),
+       lwd = 2,
+       cex = 0.8)
 ```
 
+**Both models perform similarly across all of the metrics that we are evaluating with the greatest difference being in sensitivity where the difference is 0.01. There is almost no visible deviation from the two ROC lines plotted above.**
+
+# Final Model
+
+**Since we are most concerned about maximizing the f1 score for out models in this project, the random forest model fit on the 1-hot dummy encoded performed just slighty better with and f1 of 0.5935158.**
