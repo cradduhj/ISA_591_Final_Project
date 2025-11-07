@@ -1,0 +1,548 @@
+---
+title: 'Part 2 XGBoost'
+author: "Harrison Cradduck, Nick Berry"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_float: yes
+    code_download: yes
+  word_document:
+    toc: no
+---
+
+```{r setup, include = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(fig.width = 8, fig.height = 6)
+set.seed(123)
+
+if(require(pacman) == 0)
+   {install.packages("pacman")}
+pacman::p_load(devtools, caret, cluster, dplyr, fastDummies, leaps, pacman, tidyverse, skimr, fastDummies, GGally, DataExplorer, ggrepel, ggthemes, dslabs, lubridate, stringr, tidytext, purrr, ROSE, doParallel, xgboost)
+
+if (!require(mlba)) {
+  library(devtools)
+  install_github("gedeck/mlba/mlba", force = TRUE)
+}
+pacman::p_load(mlba, tidyverse)
+```
+
+# Introduction
+
+**Using the methods we discussed in class, develop the best XGBoost model that you can. Tune hyperparameters to improve model performance.**
+
+# Data Loading
+
+Loading in the original training and holdout data sets.
+
+```{r}
+# read in .csv training data file
+data_train <- readRDS("../data/final_cleaned_train_part2.rds")
+```
+
+```{r}
+# read in .csv holdout data file
+data_holdout <- readRDS("../data/final_cleaned_holdout_part2.rds")
+```
+
+## Downsampling
+
+Downsampling the original training data set.
+
+```{r}
+# down-sample the training data
+data_train_ds <- ovun.sample(loan_default ~ ., data = data_train, method = "under")$data
+```
+
+# Modeling
+
+Set seed for reproducibility, create cluster for parallel processing, and set up corss-validation.
+
+```{r}
+# set seed for reproducibility
+set.seed(123)
+```
+
+```{r}
+# detect available cores
+n_cores <- parallel::detectCores() - 1
+
+# create and register cluster
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+```
+
+```{r}
+# set up cross-validation
+ctrl <- trainControl(
+  method = "cv",
+  number = 10,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary,
+  savePredictions = "final",
+  allowParallel = TRUE
+)
+```
+
+## Initial Downsampled XGBoost Model
+
+Fit an XGBoost model on the downsampled training data set.
+
+```{r}
+# fit a single XGBoost tree using caret
+# xgb_tree1 <- train(
+#   loan_default ~ ., 
+#   data = data_train_ds,
+#   method = "xgbTree",
+#   trControl = ctrl,
+#   tuneLength = 5
+# )
+
+# read in .rds file
+xgb_tree1 <- read_rds("xgb_tree1.rds")
+
+# predict probabilities on holdout
+xgb_tree1_pred_prob <- predict(xgb_tree1, data_holdout, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(xgb_tree1_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_ds <- perf_auc@y.values[[1]]
+print(auc_ds)
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_ds <- which.max(f1)
+best_thresh_ds <- thresholds[best_index_ds]
+best_f1_ds <- f1[best_index_ds]
+
+# print results
+cat("Best threshold:", best_thresh_ds, "\n")
+cat("Best F1 score:", best_f1_ds, "\n")
+
+# create final class predictions using best threshold
+xgb_tree1_pred_class <- factor(
+  ifelse(xgb_tree1_pred_prob >= best_thresh_ds, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(xgb_tree1_pred_class, data_holdout$loan_default, positive = "Yes")
+print(cm)
+```
+
+**We fit a 5-fold cross-validated XGBoost model on the downsampled training data with a tuneLength of 5. The model metrics are as follows: AUC = 0.856, accuracy = 0.829, sensitivity = 0.645, and specificity = 0.874. The best threshold optimized by F1 score is 0.670 with an F1 score of 0.597.**
+
+```{r}
+# save as .rds file to avoid refitting
+# write_rds(xgb_tree1, "xgb_tree1.rds")
+```
+
+**We saved the tree as a .rds file to avoid refitting and allow us to read the .rds file above.**
+
+```{r}
+# extract variable importance
+var_imp_xgb_tree1 <- varImp(xgb_tree1)$importance
+
+# collapse Yes/No into one overall measure
+var_imp_xgb_tree1_df <- var_imp_xgb_tree1 %>%
+  tibble::rownames_to_column("Variable") %>%
+  mutate(Overall = rowMeans(across(where(is.numeric)), na.rm = TRUE)) %>%
+  select(Variable, Overall) %>%
+  arrange(desc(Overall))
+```
+
+**We created a dataframe with the variable importance for the random forest model.**
+
+## Improved Downsampled XGBoost Model
+
+Load in the improved training and holdout data sets.
+
+```{r}
+# read in .csv training data file
+data_train_better <- readRDS("../data/final_cleaned_train_part2_better.rds")
+```
+
+```{r}
+# read in .csv holdout data file
+data_holdout_better <- readRDS("../data/final_cleaned_holdout_part2_better.rds")
+```
+
+```{r}
+# down-sample the training data
+data_train_ds_better <- ovun.sample(loan_default ~ ., data = data_train_better, method = "under")$data
+```
+
+Fit an XGBoost model on the improved training data set.
+
+```{r}
+# fit a single XGBoost tree using caret
+# xgb_tree2 <- train(
+#   loan_default ~ .,
+#   data = data_train_ds_better,
+#   method = "xgbTree",
+#   trControl = ctrl,
+#   tuneLength = 5
+# )
+
+# read in .rds file
+xgb_tree2 <- read_rds("xgb_tree2.rds")
+
+# predict probabilities on holdout
+xgb_tree2_pred_prob <- predict(xgb_tree2, data_holdout_better, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout_better$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(xgb_tree2_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_ds_imp <- perf_auc@y.values[[1]]
+print(auc_ds_imp)
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_ds_imp <- which.max(f1)
+best_thresh_ds_imp <- thresholds[best_index_ds_imp]
+best_f1_ds_imp <- f1[best_index_ds_imp]
+
+# print results
+cat("Best threshold:", best_thresh_ds_imp, "\n")
+cat("Best F1 score:", best_f1_ds_imp, "\n")
+
+# create final class predictions using best threshold
+xgb_tree2_pred_class <- factor(
+  ifelse(xgb_tree2_pred_prob >= best_thresh_ds_imp, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(xgb_tree2_pred_class, data_holdout_better$loan_default, positive = "Yes")
+print(cm)
+```
+
+**We fit a 5-fold cross-validated XGBoost model on the improved downsampled training data with a tuneLength of 5. The model metrics are as follows: AUC = 0.856, accuracy = 0.822, sensitivity = 0.670, and specificity = 0.860. The best threshold optimized by F1 score is 0.634 with an F1 score of 0.597.**
+
+```{r}
+# save as .rds file to avoid refitting
+# write_rds(xgb_tree2, "xgb_tree2.rds")
+```
+
+**We saved the tree as a .rds file to avoid refitting and allow us to read the .rds file above.**
+
+```{r}
+# extract variable importance
+var_imp_xgb_tree2 <- varImp(xgb_tree2)$importance
+
+# collapse Yes/No into one overall measure
+var_imp_xgb_tree2_df <- var_imp_xgb_tree2 %>%
+  tibble::rownames_to_column("Variable") %>%
+  mutate(Overall = rowMeans(across(where(is.numeric)), na.rm = TRUE)) %>%
+  select(Variable, Overall) %>%
+  arrange(desc(Overall))
+```
+
+```{r}
+# remove unimportant variables
+data_train_ds_better_imp <- data_train_ds_better %>% dplyr::select(-sub_grade, -yrs_since_last_delinq, -verification_status, -mort_acc, -delinq_2yrs)
+
+data_holdout_better_imp <- data_holdout_better %>% dplyr::select(-sub_grade, -yrs_since_last_delinq, -verification_status, -mort_acc, -delinq_2yrs)
+```
+
+**We created a dataframe with the variable importance for the random forest model.**
+
+## Improved Important Downsampled XGBoost Model
+
+Fit an XGBoost model on the improved, important downsampled training data set.
+
+```{r}
+# fit a single XGBoost tree using caret
+# xgb_tree3 <- train(
+#   loan_default ~ .,
+#   data = data_train_ds_better_imp,
+#   method = "xgbTree",
+#   trControl = ctrl,
+#   tuneLength = 5
+# )
+
+# read in .rds file
+xgb_tree3 <- read_rds("xgb_tree3.rds")
+
+# predict probabilities on holdout
+xgb_tree3_pred_prob <- predict(xgb_tree3, data_holdout_better_imp, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout_better_imp$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(xgb_tree3_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_ds_imp2 <- perf_auc@y.values[[1]]
+print(auc_ds_imp2)
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_ds_imp2 <- which.max(f1)
+best_thresh_ds_imp2 <- thresholds[best_index_ds_imp2]
+best_f1_ds_imp2 <- f1[best_index_ds_imp2]
+
+# print results
+cat("Best threshold:", best_thresh_ds_imp2, "\n")
+cat("Best F1 score:", best_f1_ds_imp2, "\n")
+
+# create final class predictions using best threshold
+xgb_tree3_pred_class <- factor(
+  ifelse(xgb_tree3_pred_prob >= best_thresh_ds_imp2, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(xgb_tree3_pred_class, data_holdout_better_imp$loan_default, positive = "Yes")
+print(cm)
+```
+
+**We fit a 5-fold cross-validated XGBoost model on the improved, important (removed unimportant features) downsampled training data with a tuneLength of 5. The model metrics are as follows: AUC = 0.856, accuracy = 0.818, sensitivity = 0.687, and specificity = 0.850. The best threshold optimized by F1 score is 0.618 with an F1 score of 0.597.**
+
+```{r}
+# save as .rds file to avoid refitting
+# write_rds(xgb_tree3, "xgb_tree3.rds")
+```
+
+**We saved the tree as a .rds file to avoid refitting and allow us to read the .rds file above.**
+
+```{r}
+# extract variable importance
+var_imp_xgb_tree3 <- varImp(xgb_tree3)$importance
+
+# collapse Yes/No into one overall measure
+var_imp_xgb_tree3_df <- var_imp_xgb_tree3 %>%
+  tibble::rownames_to_column("Variable") %>%
+  mutate(Overall = rowMeans(across(where(is.numeric)), na.rm = TRUE)) %>%
+  select(Variable, Overall) %>%
+  arrange(desc(Overall))
+```
+
+**We created a dataframe with the variable importance for the random forest model.**
+
+```{r}
+# remove unimportant variables
+data_train_ds_better_imp2 <- data_train_ds_better_imp %>% dplyr::select(-purpose, -emp_title_group, -pub_rec_bankruptcies, -pub_rec_non_bankruptcies)
+
+data_holdout_better_imp2 <- data_holdout_better_imp %>% dplyr::select(-purpose, -emp_title_group, -pub_rec_bankruptcies, -pub_rec_non_bankruptcies)
+```
+
+## Downsampled Dummy XGBoost Model
+
+Dummy-code the factors in the improved, important training data set.
+
+```{r}
+# set response variable
+response <- "loan_default"
+
+# set predictor variables
+predictor_cols <- setdiff(names(data_train_ds_better_imp2), response)
+
+# create dummy variables for all factor columns in data_train
+data_train_dummy <- fastDummies::dummy_cols(
+  data_train_ds_better_imp2[, predictor_cols],
+  remove_first_dummy = FALSE,
+  remove_selected_columns = TRUE
+)
+data_train_dummy[[response]] <- data_train_ds_better_imp2[[response]]
+
+colnames(data_train_dummy) <- make.names(colnames(data_train_dummy))
+
+# create dummy variables for all factor columns in data_holdout
+data_holdout_dummy <- fastDummies::dummy_cols(
+  data_holdout_better_imp2[, predictor_cols],
+  remove_first_dummy = FALSE,
+  remove_selected_columns = TRUE
+)
+data_holdout_dummy[[response]] <- data_holdout_better_imp2[[response]]
+
+colnames(data_holdout_dummy) <- make.names(colnames(data_train_dummy))
+```
+
+Downsample the dummy-coded training data set.
+
+```{r}
+# down-sample the dummy training data
+data_train_dummy_ds <- ovun.sample(loan_default ~ ., data = data_train_dummy, method = "under")$data
+```
+
+Fit an XGBoost model on the downsampled dummy-coded training data set.
+
+```{r}
+# # fit a single XGBoost tree using caret
+# xgb_tree4 <- train(
+#   loan_default ~ .,
+#   data = data_train_dummy_ds,
+#   method = "xgbTree",
+#   trControl = ctrl,
+#   tuneLength = 7
+# )
+# 
+# # xgb_tree4 <- read_rds("xgb_tree4.rds")
+# 
+# # predict probabilities on holdout
+# xgb_tree4_pred_prob <- predict(xgb_tree4, data_holdout_dummy, type = "prob")[, "Yes"]
+# 
+# # create true labels (1 = Yes, 0 = No)
+# true_labels <- ifelse(data_holdout_dummy$loan_default == "Yes", 1, 0)
+# 
+# # use ROCR to evaluate across thresholds
+# pred <- ROCR::prediction(xgb_tree4_pred_prob, true_labels)
+# 
+# # get precision-recall performance
+# perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+# 
+# # compute AUC
+# perf_auc <- ROCR::performance(pred, measure = "auc")
+# auc <- perf_auc@y.values[[1]]
+# print(auc)
+# 
+# # extract values
+# precision <- perf@y.values[[1]]
+# recall <- perf@x.values[[1]]
+# thresholds <- perf@alpha.values[[1]]
+# 
+# # compute F1
+# f1 <- 2 * (precision * recall) / (precision + recall)
+# f1[is.nan(f1)] <- 0
+# 
+# # find best threshold and F1
+# best_index <- which.max(f1)
+# best_thresh <- thresholds[best_index]
+# best_f1 <- f1[best_index]
+# 
+# # print results
+# cat("Best threshold:", best_thresh, "\n")
+# cat("Best F1 score:", best_f1, "\n")
+# 
+# # create final class predictions using best threshold
+# xgb_tree4_pred_class <- factor(
+#   ifelse(xgb_tree4_pred_prob >= best_thresh, "Yes", "No"),
+#   levels = c("No", "Yes")
+# )
+# 
+# # confusion matrix with optimal threshold
+# cm <- caret::confusionMatrix(xgb_tree4_pred_class, data_holdout_dummy$loan_default, positive = "Yes")
+# print(cm)
+```
+
+```{r}
+# # save as .rds file to avoid refitting
+# write_rds(xgb_tree4, "xgb_tree4.rds")
+```
+
+**We saved the tree as a .rds file to avoid refitting and allow us to read the .rds file above.**
+
+```{r}
+# # extract variable importance
+# var_imp_xgb_tree4 <- varImp(xgb_tree4)$importance
+# 
+# # collapse Yes/No into one overall measure
+# var_imp_xgb_tree4_df <- var_imp_xgb_tree4 %>%
+#   tibble::rownames_to_column("Variable") %>%
+#   mutate(Overall = rowMeans(across(where(is.numeric)), na.rm = TRUE)) %>%
+#   select(Variable, Overall) %>%
+#   arrange(desc(Overall))
+```
+
+**We created a dataframe with the variable importance for the random forest model.**
+
+**The model above did not run due to lack of available memory (>500 Mb), considering we used the dummy-coded data (more variables), a 10-fold cross-validation, and a tuneLength of 7.**
+
+```{r}
+stopCluster(cl)
+registerDoSEQ()
+```
+
+# Model Comparison
+
+```{r}
+# compare models
+comparison <- data.frame(
+  Model = c("Downsampled", "Improved Downsampled", "Improved Important Downsampled"),
+  AUC = c(auc_ds, auc_ds_imp, auc_ds_imp2),
+  Best_Threshold = c(best_thresh_ds, best_thresh_ds_imp, best_thresh_ds_imp2),
+  Best_F1 = c(best_f1_ds, best_f1_ds_imp, best_f1_ds_imp2)
+)
+comparison <- comparison[order(-comparison$Best_F1), ]
+print(comparison)
+```
+
+**The model comparison above shows that the model fit using the improved, important downsampled training data set results in the highest F1 score, while the model fit using the improved downsampled training data set results in the second highest F1 score. All three models result in very similar F1 scores and thresholds.**
+
+```{r}
+# compare models by plotting ROC curves
+roc_ds <- pROC::roc(data_holdout$loan_default, predict(xgb_tree1, data_holdout, type = "prob")[, "Yes"])
+roc_ds_imp <- pROC::roc(data_holdout_better$loan_default, predict(xgb_tree2, data_holdout_better, type = "prob")[, "Yes"])
+roc_ds_imp2 <- pROC::roc(data_holdout_better$loan_default, predict(xgb_tree3, data_holdout_better, type = "prob")[, "Yes"])
+
+plot(roc_ds, col = "blue", lwd = 2, main = "ROC Curves for XGBoost Models")
+plot(roc_ds_imp, add = TRUE, col = "red", lwd = 2)
+plot(roc_ds_imp2, add = TRUE, col = "darkgreen", lwd = 2)
+
+legend("bottomright",
+       legend = c(
+         paste0("Downsampled AUC = ", auc_ds),
+         paste0("Improved Downsampled AUC = ", auc_ds_imp),
+         paste0("Improved Important Downsampled AUC = ", auc_ds_imp2)
+       ),
+       col = c("blue", "red", "darkgreen"),
+       lwd = 2,
+       cex = 0.8)
+```
+
+**The ROC curve comparison above shows almost the exact same curve for all three models. In terms of AUC, the model fit using the downsampled training data set has the highest value at 0.8558, and the model fit using the improved downsampled training data set has the second highest value at 0.8556.**
+
+# Final Model
+
+**The final XGBoost model chosen is the model trained on the improved, important downsampled training data set built using 5-fold cross validation and a tuneLength of 5. The model was evaluated on the imrpoved, downsampled holdout data set, and an optimal probability threshold of 0.6168181	was selected to maximize the F1 score at 0.5971644. This threshold-adjusted tree represents our final classification rule, optimized for F1 balance between precision and recall.**

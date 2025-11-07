@@ -1,0 +1,471 @@
+---
+title: 'Part 2 Random Forest'
+author: "Harrison Cradduck, Nick Berry"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_float: yes
+    code_download: yes
+  word_document:
+    toc: no
+---
+
+```{r setup, include = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(fig.width = 8, fig.height = 6)
+set.seed(123)
+
+if(require(pacman) == 0)
+   {install.packages("pacman")}
+pacman::p_load(devtools, caret, cluster, dplyr, fastDummies, leaps, pacman, tidyverse, skimr, fastDummies, GGally, DataExplorer, ggrepel, ggthemes, dslabs, lubridate, stringr, tidytext, purrr, ROSE, MLmetrics, doParallel)
+
+if (!require(mlba)) {
+  library(devtools)
+  install_github("gedeck/mlba/mlba", force = TRUE)
+}
+pacman::p_load(mlba, tidyverse)
+```
+
+# Introduction
+
+**Using the methods we discussed in class, develop the best Random Forest tree that you can. Tune hyperparameters to improve model performance.**
+
+# Data Loading
+
+Loading in the training and holdout files, both our origiinal versions and our improved versions. 
+
+```{r}
+# read in .csv training data file
+data_train <- readRDS("../data/final_cleaned_train_part2.rds")
+```
+
+```{r}
+# read in .csv holdout data file
+data_holdout <- readRDS("../data/final_cleaned_holdout_part2.rds")
+```
+
+```{r}
+# read in .csv training data file
+data_train_better <- readRDS("../data/final_cleaned_train_part2_better.rds")
+```
+
+```{r}
+# read in .csv holdout data file
+data_holdout_better <- readRDS("../data/final_cleaned_holdout_part2_better.rds")
+```
+
+## Dummy-coding
+
+Dummy-coded the factors in the improved training and holdout sets.
+
+```{r}
+# set response variable
+response <- "loan_default"
+
+# set predictor variables
+predictor_cols <- setdiff(names(data_train_better), response)
+
+# create dummy variables for all factor columns in data_train
+data_train_dummy <- fastDummies::dummy_cols(
+  data_train_better[, predictor_cols],
+  remove_first_dummy = FALSE,
+  remove_selected_columns = TRUE
+)
+data_train_dummy[[response]] <- data_train_better[[response]]
+
+colnames(data_train_dummy) <- make.names(colnames(data_train_dummy))
+
+# create dummy variables for all factor columns in data_holdout
+data_holdout_dummy <- fastDummies::dummy_cols(
+  data_holdout_better[, predictor_cols],
+  remove_first_dummy = FALSE,
+  remove_selected_columns = TRUE
+)
+data_holdout_dummy[[response]] <- data_holdout_better[[response]]
+
+colnames(data_holdout_dummy) <- make.names(colnames(data_train_dummy))
+```
+
+## Downsampling
+
+Downsampled the original, improved, and dummy-coded training data sets.
+
+```{r}
+# down-sample the training data
+data_train_ds <- ovun.sample(loan_default ~ ., data = data_train, method = "under")$data
+```
+
+```{r}
+# down-sample the training data
+data_train_ds_better <- ovun.sample(loan_default ~ ., data = data_train_better, method = "under")$data
+```
+
+```{r}
+# down-sample the dummy training data
+data_train_dummy_ds <- ovun.sample(loan_default ~ ., data = data_train_dummy, method = "under")$data
+```
+
+# Modeling
+
+Set seed for reproducibility, create cluster for parallel processing, and set up cross-validation and mtry sequence.
+
+```{r}
+# set seed for reproducibility
+set.seed(123)
+```
+
+```{r}
+# detect available cores
+n_cores <- parallel::detectCores() - 1
+
+# create and register cluster
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+```
+
+```{r}
+# set up cross-validation
+ctrl <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary,
+  savePredictions = "final",
+  allowParallel = TRUE
+)
+
+# iterate through values of mtry
+rf_grid <- expand.grid(mtry = seq(15, ncol(data_train) - 1, 2))
+```
+
+**We tried sequencing mtry from 1 to 10 and 10 was chosen. We tried sequencing mtry from 10 to 20 and 20 was chosen. We settled on sequencing mtry from 15 to number of columns - 1.**
+
+## Downsampled Random Forest
+
+```{r}
+# fit a single random forest using caret
+# rf_tree1 <- train(
+#   loan_default ~ .,
+#   data = data_train_ds,
+#   method = "rf",
+#   metric = "ROC",
+#   trControl = ctrl,
+#   tuneGrid = rf_grid,
+#   ntree = 100,
+#   nodesize = 100,
+#   importance = TRUE
+# )
+
+rf_tree1 <- read_rds("rf_tree1.rds")
+
+# predict probabilities on holdout
+rf_tree1_pred_prob <- predict(rf_tree1, data_holdout, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(rf_tree1_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_ds <- perf_auc@y.values[[1]]
+print(auc_ds)
+
+# get mtry
+rf_tree1$bestTune$mtry
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_ds <- which.max(f1)
+best_thresh_ds <- thresholds[best_index_ds]
+best_f1_ds <- f1[best_index_ds]
+
+# print results
+cat("Best threshold:", best_thresh_ds, "\n")
+cat("Best F1 score:", best_f1_ds, "\n")
+
+# create final class predictions using best threshold
+rf_tree1_pred_class <- factor(
+  ifelse(rf_tree1_pred_prob >= best_thresh_ds, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(rf_tree1_pred_class, data_holdout$loan_default, positive = "Yes")
+print(cm)
+
+# variable importance plot
+randomForest::varImpPlot(rf_tree1$finalModel, type = 2)
+```
+
+**We fit a 5-fold cross-validated random forest model on the original training data with 100 trees, a minimum nodesize of 100, and optimized using ROC over the default accuracy. The model metrics are as follows: AUC = 0.848, mtry = 27, accuracy = 0.820, sensitivity = 0.663, and specificity = 0.859. The best threshold optimized by F1 score is 0.73 with an F1 score of 0.591.**
+
+```{r}
+# save as .rds file to avoid refitting
+# write_rds(rf_tree1, "rf_tree1.rds")
+```
+
+**We saved the tree as a .rds file to avoid refitting and allow us to read the .rds file above.**
+
+```{r}
+# extract variable importance
+var_imp_rf_tree1 <- varImp(rf_tree1)$importance
+
+# collapse Yes/No into one overall measure
+var_imp_rf_tree1_df <- var_imp_rf_tree1 %>%
+  tibble::rownames_to_column("Variable") %>%
+  mutate(Overall = rowMeans(across(where(is.numeric)), na.rm = TRUE)) %>%
+  select(Variable, Overall) %>%
+  arrange(desc(Overall))
+```
+
+**We created a dataframe with the variable importance for the random forest model.**
+
+## Improved Downsampled Random Forest
+
+```{r}
+# fit a single random forest using caret
+# rf_tree1_better <- train(
+#   loan_default ~ .,
+#   data = data_train_ds_better,
+#   method = "rf",
+#   metric = "ROC",
+#   trControl = ctrl,
+#   tuneGrid = rf_grid,
+#   ntree = 100,
+#   nodesize = 100,
+#   importance = TRUE
+# )
+
+rf_tree1_better <- read_rds("rf_tree1_better.rds")
+
+# predict probabilities on holdout
+rf_tree1_better_pred_prob <- predict(rf_tree1_better, data_holdout_better, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout_better$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(rf_tree1_better_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_ds_imp <- perf_auc@y.values[[1]]
+print(auc_ds_imp)
+
+# get mtry
+rf_tree1_better$bestTune$mtry
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_ds_imp <- which.max(f1)
+best_thresh_ds_imp <- thresholds[best_index_ds_imp]
+best_f1_ds_imp <- f1[best_index_ds_imp]
+
+# print results
+cat("Best threshold:", best_thresh_ds_imp, "\n")
+cat("Best F1 score:", best_f1_ds_imp, "\n")
+
+# create final class predictions using best threshold
+rf_tree1_better_pred_class <- factor(
+  ifelse(rf_tree1_better_pred_prob >= best_thresh_ds_imp, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(rf_tree1_better_pred_class, data_holdout_better$loan_default, positive = "Yes")
+print(cm)
+
+# variable importance plot
+randomForest::varImpPlot(rf_tree1_better$finalModel, type = 2)
+```
+
+**We fit a 5-fold cross-validated random forest model on the original training data with 100 trees, a minimum nodesize of 100, and optimized using ROC over the default accuracy. The model metrics are as follows: AUC = 0.847, mtry = 27, accuracy = 0.818, sensitivity = 0.677, and specificity = 0.852. The best threshold optimized by F1 score is 0.72 with an F1 score of 0.593.**
+
+```{r}
+# save as .rds file to avoid refitting
+# write_rds(rf_tree1_better, "rf_tree1_better.rds")
+```
+
+**We saved the tree as a .rds file to avoid refitting and allow us to read the .rds file above.**
+
+```{r}
+# extract variable importance
+var_imp_rf_tree1_better <- varImp(rf_tree1_better)$importance
+
+# collapse Yes/No into one overall measure
+var_imp_rf_tree1_better_df <- var_imp_rf_tree1_better %>%
+  tibble::rownames_to_column("Variable") %>%
+  mutate(Overall = rowMeans(across(where(is.numeric)), na.rm = TRUE)) %>%
+  select(Variable, Overall) %>%
+  arrange(desc(Overall))
+```
+
+**We created a dataframe with the variable importance for the random forest model.**
+
+## Dummy-coded Random Forest
+
+```{r}
+# # fit a single random forest using caret
+# # rf_tree2 <- train(
+# #   loan_default ~ ., 
+# #   data = data_train_dummy,
+# #   method = "rf",
+# #   metric = "ROC",
+# #   trControl = ctrl,
+# #   tuneGrid = rf_grid,
+# #   ntree = 100,
+# #   nodesize = 100,
+# #   importance = TRUE
+# # )
+# 
+# # read in .rds file
+# rf_tree2 <- read_rds("rf_tree2.rds")
+# 
+# # predict probabilities on holdout
+# rf_tree32pred_prob <- predict(rf_tree2, data_holdout_dummy, type = "prob")[, "Yes"]
+# 
+# # create true labels (1 = Yes, 0 = No)
+# true_labels <- ifelse(data_holdout_dummy$loan_default == "Yes", 1, 0)
+# 
+# # use ROCR to evaluate across thresholds
+# pred <- ROCR::prediction(rf_tree1_pred_prob, true_labels)
+# 
+# # get precision-recall performance
+# perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+# 
+# # compute AUC
+# perf_auc <- ROCR::performance(pred, measure = "auc")
+# auc <- perf_auc@y.values[[1]]
+# print(auc)
+# 
+# # get mtry
+# rf_tree2$bestTune$mtry
+# 
+# # extract values
+# precision <- perf@y.values[[1]]
+# recall <- perf@x.values[[1]]
+# thresholds <- perf@alpha.values[[1]]
+# 
+# # compute F1
+# f1 <- 2 * (precision * recall) / (precision + recall)
+# f1[is.nan(f1)] <- 0
+# 
+# # find best threshold and F1
+# best_index <- which.max(f1)
+# best_thresh <- thresholds[best_index]
+# best_f1 <- f1[best_index]
+# 
+# # print results
+# cat("Best threshold:", best_thresh, "\n")
+# cat("Best F1 score:", best_f1, "\n")
+# 
+# # create final class predictions using best threshold
+# rf_tree2_pred_class <- factor(
+#   ifelse(rf_tree2_pred_prob >= best_thresh, "Yes", "No"),
+#   levels = c("No", "Yes")
+# )
+# 
+# # confusion matrix with optimal threshold
+# cm <- caret::confusionMatrix(rf_tree2_pred_class, data_holdout_dummy$loan_default, positive = "Yes")
+# print(cm)
+# 
+# # variable importance plot
+# randomForest::varImpPlot(rf_tree3$finalModel, type = 2)
+```
+
+**We fit a 5-fold cross-validated random forest model on the dummy-coded training data with 100 trees, a minimum nodesize of 100, and optimized using ROC over the default accuracy.**
+
+```{r}
+# save as .rds file to avoid refitting
+# write_rds(rf_tree2, "rf_tree2.rds")
+```
+
+**We saved the tree as a .rds file to avoid refitting and allow us to read the .rds file above.**
+
+```{r}
+# # extract variable importance
+# var_imp_rf_tree2 <- varImp(rf_tree2)$importance
+# 
+# # collapse Yes/No into one overall measure
+# var_imp_rf_tree2_df <- var_imp_rf_tree2 %>%
+#   tibble::rownames_to_column("Variable") %>%
+#   mutate(Overall = rowMeans(across(where(is.numeric)), na.rm = TRUE)) %>%
+#   select(Variable, Overall) %>%
+#   arrange(desc(Overall))
+```
+
+**We created a dataframe with the variable importance for the random forest model.**
+
+```{r}
+stopCluster(cl)
+registerDoSEQ()
+```
+
+# Model Comparison
+
+```{r}
+# compare models
+comparison <- data.frame(
+  Model = c("Downsampled", "Improved Downsampled"),
+  AUC = c(auc_ds, auc_ds_imp),
+  Best_Threshold = c(best_thresh_ds, best_thresh_ds_imp),
+  Best_F1 = c(best_f1_ds, best_f1_ds_imp)
+)
+comparison <- comparison[order(-comparison$Best_F1), ]
+print(comparison)
+```
+
+**The model comparison above shows that the model fit using the improved downsampled training data set results in the highest F1 score. Both models result in very similar F1 scores and thresholds.**
+
+```{r}
+# compare models by plotting ROC curves
+roc_ds <- pROC::roc(data_holdout$loan_default, predict(rf_tree1, data_holdout, type = "prob")[, "Yes"])
+roc_ds_imp <- pROC::roc(data_holdout_better$loan_default, predict(rf_tree1_better, data_holdout_better, type = "prob")[, "Yes"])
+
+plot(roc_ds, col = "blue", lwd = 2, main = "ROC Curves for Random Forest Models")
+plot(roc_ds_imp, add = TRUE, col = "red", lwd = 2)
+
+legend("bottomright",
+       legend = c(
+         paste0("Downsampled AUC = ", auc_ds),
+         paste0("Improved Downsampled AUC = ", auc_ds_imp)
+       ),
+       col = c("blue", "red", "darkgreen"),
+       lwd = 2,
+       cex = 0.8)
+```
+
+**The ROC curve comparison above shows almost the exact same curve for both models. In terms of AUC, the model fit using the downsampled training data set has the highest value at 0.8481, and the model fit using the improved downsampled training data set has the second highest value at 0.8469.**
+
+# Final Model
+
+**The final Random Forest model chosen is the model trained on the improved downsampled training data set built using 5-fold cross validation, a minimum nodesize of 100, an optimal mtry of 27, and fitting 100 trees. The model was evaluated on the improved downsampled holdout data set, and an optimal probability threshold of 0.72 was selected to maximize the F1 score at 0.5933074. This threshold-adjusted tree represents our final classification rule, optimized for F1 balance between precision and recall.**
