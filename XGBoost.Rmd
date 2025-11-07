@@ -1,0 +1,426 @@
+---
+title: "XGBoost"
+author: "Harrison Cradduck, Nick Berry"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_float: yes
+    code_download: yes
+  word_document:
+    toc: no
+---
+
+```{r setup, include = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(fig.width = 8, fig.height = 6)
+
+if(require(pacman) == 0)
+   {install.packages("pacman")}
+pacman::p_load(devtools, caret, cluster, dplyr, fastDummies, leaps, pacman, tidyverse, skimr, fastDummies, GGally, DataExplorer, ggrepel, ggthemes, dslabs, lubridate, stringr, tidytext, purrr, forcats, rpart, ROCR, stringr, MLmetrics, doParallel, parallel)
+
+if (!require(mlba)) {
+  library(devtools)
+  install_github("gedeck/mlba/mlba", force = TRUE)
+}
+pacman::p_load(mlba, tidyverse)
+```
+
+# loading in training and holdout data
+
+```{r}
+# read in training and holdout datsets
+train <- readr:: read_rds('decision_tree_train.rds')
+holdout <- readr::read_rds('decision_tree_holdout.rds')
+```
+
+```{r}
+# downsampling the majority class
+set.seed(123)
+train.ds <- caret::downSample(x = train %>% 
+                    dplyr::select(-loan_default),
+                  y = train$loan_default,
+                  yname = "loan_default")
+table(train.ds$loan_default)
+```
+
+# setting up parallel processing
+
+```{r}
+cores = parallel::detectCores()
+cores
+```
+
+```{r}
+c1 <- parallel::makeCluster(8)
+registerDoParallel(c1)
+```
+
+# training XGBoost model
+
+
+```{r}
+# set up train control
+cv_control <- trainControl(method = 'cv', number = 10, allowParallel = TRUE)
+```
+
+```{r}
+xgb_model <- caret::train(
+  loan_default ~ .,
+  data = train.ds,
+  method = 'xgbTree',
+  trControl = cv_control,
+  tuneLength = 5
+)
+```
+
+```{r}
+stopCluster(c1)
+registerDoSEQ()
+```
+
+
+# evaluating model
+
+```{r}
+print(xgb_model$bestTune)
+#consider iterating over the tuneGrid and manually adjusting hyperparameters rather than haveing them randomly selected
+```
+
+
+```{r}
+# read in the predictions from the pruned decision trees
+pred.holdout <- readr::read_rds('holdout_predictions.rds')
+```
+
+```{r}
+pred.holdout$xgb_prob <- predict(xgb_model,
+                                   newdata = holdout,
+                                   type = 'prob')[,'Yes']
+```
+
+
+```{r}
+# computing ROC of curve
+pred <- ROCR::prediction(pred.holdout$xgb_prob,
+                         pred.holdout$loan_default)
+perf <- ROCR::performance(pred, 'tpr', 'fpr')
+```
+
+```{r}
+# plotting ROC curve
+plot(perf, col = 'blue', lwd = 2, main = 'ROC Curve for Cross-Validated Training Model')
+abline(a = 0, b = 1, col = 'red', lty = 2, lwd =2)
+```
+
+```{r}
+# AUC of above curve
+ROCR::performance(pred, 'auc')@y.values[[1]]
+```
+
+```{r}
+# finding the optimal threshold
+
+#finding precision and recall
+prec <- ROCR::performance(pred, 'prec')
+rec <- ROCR::performance(pred, 'rec')
+
+# extracting precision and recall
+precision <- prec@y.values[[1]]
+recall <- rec@y.values[[1]]
+
+#compute F1 
+f1 = 2 * precision * recall / (precision + recall)
+f1[is.nan(f1)] = 0
+
+# combine F1 and cuttofs 
+cutoffs = prec@x.values[[1]]
+df_f1 = data.frame(f1, cutoffs)
+
+# find the optimal F1 index, F1 score , and cutoff
+opt_idx <- which.max(f1)
+opt_f1 <- df_f1[opt_idx,]
+opt_f1
+```
+
+
+
+```{r}
+best_thresh <- .6110328
+pred.holdout$xgb_class <- factor(
+  ifelse(pred.holdout$xgb_prob >= best_thresh, 
+         'Yes', 'No'))
+```
+
+```{r}
+# print a confusion matrix for the random forest model
+caret::confusionMatrix(pred.holdout$xgb_class,
+                       pred.holdout$loan_default,
+                       positive = 'Yes')
+```
+
+```{r}
+# variable importance
+caret::varImp(xgb_model, type = 2)
+```
+
+
+
+```{r}
+saveRDS(xgb_model, 'xgboost.rds')
+```
+
+```{r}
+# comparing the important model metrics into one dataframe
+
+# saving the observed classifications
+truth <- pred.holdout$loan_default
+
+# Get model names based on .prob columns
+model_names <- names(pred.holdout) %>%
+  stringr::str_subset("\\_prob$") %>%
+  stringr::str_remove("\\_prob$")
+
+# Function to compute metrics for each model
+get_metrics <- function(model_name) {
+  prob_col <- paste0(model_name, "_prob")
+  class_col <- paste0(model_name, "_class")
+
+  # Extract predictions
+  prob <- pred.holdout[[prob_col]]
+  pred <- factor(pred.holdout[[class_col]], levels = c("No", "Yes"))
+
+  # Confusion matrix
+  cm <- caret::confusionMatrix(pred, truth, positive = "Yes")
+
+  # AUC
+  roc_obj <- pROC::roc(truth, prob, quiet = TRUE)
+
+  # Metrics
+  data.frame(
+    Model = model_name,
+    Accuracy = cm$overall["Accuracy"],
+    Sensitivity = cm$byClass["Sensitivity"],
+    Specificity = cm$byClass["Specificity"],
+    F1 = MLmetrics::F1_Score(
+      y_pred = pred,
+      y_true = truth,
+      positive = "Yes"
+    ),
+    AUC = as.numeric(roc_obj$auc)
+  )
+}
+
+# Apply to all models
+results_df <- dplyr::bind_rows(lapply(model_names, get_metrics))
+
+# Remove row names and display
+rownames(results_df) <- NULL
+print(results_df)
+```
+
+```{r}
+#saving holdout dataframe to be used with other models
+saveRDS(pred.holdout, 'holdout_predictions.rds')
+```
+
+
+# 1 hot dummy data
+
+```{r}
+# 1 hot dummy encoding. 
+dummies <- caret::dummyVars(~ . - loan_default, 
+                            data = train.ds,
+                            fullRank = FALSE)
+```
+
+```{r}
+train.dummy <- data.frame(predict(dummies, newdata = train.ds))
+
+train.dummy <- cbind(train.dummy, loan_default = train.ds$loan_default)
+```
+
+```{r}
+# 1 hot dummy encoding. 
+dummies <- caret::dummyVars(~ . - loan_default, 
+                            data = holdout,
+                            fullRank = FALSE)
+```
+
+```{r}
+holdout.dummy <- data.frame(predict(dummies, newdata = holdout))
+
+holdout.dummy <- cbind(holdout.dummy, loan_default = holdout$loan_default)
+```
+
+#1 hot dmy model
+
+```{r}
+c1 <- parallel::makeCluster(8)
+registerDoParallel(c1)
+```
+
+```{r}
+# set up train control
+cv_control <- trainControl(method = 'cv', number = 10, allowParallel = TRUE)
+```
+
+```{r}
+xgb_dmy_model <- caret::train(
+  loan_default ~ .,
+  data = train.dummy,
+  method = 'xgbTree',
+  trControl = cv_control,
+  tuneLength = 5
+)
+```
+
+```{r}
+stopCluster(c1)
+registerDoSEQ()
+```
+
+```{r}
+print(xgb_dmy_model$bestTune)
+#consider iterating over the tuneGrid and manually adjusting hyperparameters rather than haveing them randomly selected
+```
+
+```{r}
+
+pred.holdout$xgb_dmy_prob <- predict(xgb_dmy_model,
+                                   newdata = holdout.dummy,
+                                   type = 'prob')[,'Yes']
+```
+
+
+```{r}
+# computing ROC of curve
+pred <- ROCR::prediction(pred.holdout$xgb_dmy_prob,
+                         pred.holdout$loan_default)
+perf <- ROCR::performance(pred, 'tpr', 'fpr')
+```
+
+```{r}
+# plotting ROC curve
+plot(perf, col = 'blue', lwd = 2, main = 'ROC Curve for Cross-Validated Training Model')
+abline(a = 0, b = 1, col = 'red', lty = 2, lwd =2)
+```
+
+```{r}
+# AUC of above curve
+ROCR::performance(pred, 'auc')@y.values[[1]]
+```
+
+```{r}
+# finding the optimal threshold
+
+#finding precision and recall
+prec <- ROCR::performance(pred, 'prec')
+rec <- ROCR::performance(pred, 'rec')
+
+# extracting precision and recall
+precision <- prec@y.values[[1]]
+recall <- rec@y.values[[1]]
+
+#compute F1 
+f1 = 2 * precision * recall / (precision + recall)
+f1[is.nan(f1)] = 0
+
+# combine F1 and cuttofs 
+cutoffs = prec@x.values[[1]]
+df_f1 = data.frame(f1, cutoffs)
+
+# find the optimal F1 index, F1 score , and cutoff
+opt_idx <- which.max(f1)
+opt_f1 <- df_f1[opt_idx,]
+opt_f1
+```
+
+
+
+```{r}
+best_thresh <- 0.6436434
+pred.holdout$xgb_dmy_class <- factor(
+  ifelse(pred.holdout$xgb_dmy_prob >= best_thresh, 
+         'Yes', 'No'))
+```
+
+```{r}
+#saving holdout dataframe to be used with other models
+saveRDS(pred.holdout, 'holdout_predictions.rds')
+```
+
+```{r}
+# print a confusion matrix for the random forest model
+caret::confusionMatrix(pred.holdout$xgb_dmy_class,
+                       pred.holdout$loan_default,
+                       positive = 'Yes')
+```
+
+```{r}
+# variable importance
+caret::varImp(xgb_dmy_model, type = 2)
+```
+
+
+```{r}
+saveRDS(xgb_dmy_model, 'XGBoost_dmy.rds')
+```
+
+```{r}
+# comparing the important model metrics into one dataframe
+
+# saving the observed classifications
+truth <- pred.holdout$loan_default
+
+# Get model names based on .prob columns
+model_names <- names(pred.holdout) %>%
+  stringr::str_subset("\\_prob$") %>%
+  stringr::str_remove("\\_prob$")
+
+# Function to compute metrics for each model
+get_metrics <- function(model_name) {
+  prob_col <- paste0(model_name, "_prob")
+  class_col <- paste0(model_name, "_class")
+
+  # Extract predictions
+  prob <- pred.holdout[[prob_col]]
+  pred <- factor(pred.holdout[[class_col]], levels = c("No", "Yes"))
+
+  # Confusion matrix
+  cm <- caret::confusionMatrix(pred, truth, positive = "Yes")
+
+  # AUC
+  roc_obj <- pROC::roc(truth, prob, quiet = TRUE)
+
+  # Metrics
+  data.frame(
+    Model = model_name,
+    Accuracy = cm$overall["Accuracy"],
+    Sensitivity = cm$byClass["Sensitivity"],
+    Specificity = cm$byClass["Specificity"],
+    F1 = MLmetrics::F1_Score(
+      y_pred = pred,
+      y_true = truth,
+      positive = "Yes"
+    ),
+    AUC = as.numeric(roc_obj$auc)
+  )
+}
+
+# Apply to all models
+results_df <- dplyr::bind_rows(lapply(model_names, get_metrics))
+
+# Remove row names and display
+rownames(results_df) <- NULL
+print(results_df)
+```
+
+```{r}
+saveRDS(results_df, 'model_performances.rds')
+```
+
