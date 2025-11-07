@@ -429,4 +429,4 @@ legend("bottomright",
 
 # Final Model
 
-**Since we are most concerned about maximizing the f1 score for out models in this project, the random forest model fit on the 1-hot dummy encoded performed just slighty better with and f1 of 0.5935158.**
+**Since we are most concerned about maximizing the f1 score for out models in this project, the random forest model fit on the 1-hot dummy encoded performed just slightly better with and f1 of 0.5935158.**

@@ -30,7 +30,12 @@ if (!require(mlba)) {
 pacman::p_load(mlba, tidyverse)
 ```
 
-# loading in training and holdout data
+
+# Introduction
+
+**Using the methods we discussed in class, develop the best XGBoost model that you can.  Tune hyperparameters to improve model performance.**
+
+# Loading in Data
 
 ```{r}
 # read in training and holdout datsets
@@ -39,8 +44,15 @@ holdout <- readr::read_rds('decision_tree_holdout.rds')
 ```
 
 ```{r}
-# downsampling the majority class
+# set seed for ability to reproduce modeling
 set.seed(123)
+```
+
+# Downsampling
+
+**For our XGBoost models we decided to move forward with just the downsampled data for the sake of computational complexity**
+
+```{r}
 train.ds <- caret::downSample(x = train %>% 
                     dplyr::select(-loan_default),
                   y = train$loan_default,
@@ -48,49 +60,107 @@ train.ds <- caret::downSample(x = train %>%
 table(train.ds$loan_default)
 ```
 
-# setting up parallel processing
+# 1-Hot Dummy Encoding 
+
+## Training Data
 
 ```{r}
-cores = parallel::detectCores()
-cores
+# creating dummies on the training data 
+dummies <- caret::dummyVars(~ . - loan_default, 
+                            data = train.ds,
+                            fullRank = FALSE)
+# excluding the response variable so it remains in the same form in all our models
 ```
 
 ```{r}
+# making the dataframe for the dummies and reintroducing the observed class
+train.dummy <- data.frame(predict(dummies, newdata = train.ds))
+
+train.dummy <- cbind(train.dummy, loan_default = train.ds$loan_default)
+```
+
+## Holdout Data
+
+```{r}
+# creating dummies on the holdout data 
+dummies <- caret::dummyVars(~ . - loan_default, 
+                            data = holdout,
+                            fullRank = FALSE)
+```
+
+```{r}
+# making the dataframe for the dummies and reintroducing the observed class
+holdout.dummy <- data.frame(predict(dummies, newdata = holdout))
+
+holdout.dummy <- cbind(holdout.dummy, loan_default = holdout$loan_default)
+```
+
+# Modeling
+
+```{r}
+# setting up parallel processing
+cores = parallel::detectCores()
+cores
+
 c1 <- parallel::makeCluster(8)
 registerDoParallel(c1)
 ```
 
-# training XGBoost model
-
+## XGBoost Model on Ragular, Downsampled Data
 
 ```{r}
-# set up train control
+# set up train control for 10 fold cross validation
 cv_control <- trainControl(method = 'cv', number = 10, allowParallel = TRUE)
 ```
 
 ```{r}
-xgb_model <- caret::train(
-  loan_default ~ .,
-  data = train.ds,
-  method = 'xgbTree',
-  trControl = cv_control,
-  tuneLength = 5
-)
+# train XGBoost model with cross validation on downsampled training data
+# xgb_model <- caret::train(
+#   loan_default ~ .,
+#   data = train.ds,
+#   method = 'xgbTree',
+#   trControl = cv_control,
+#   tuneLength = 5
+# )
+
+# saveRDS(xgb_model, 'xgboost.rds')
+```
+
+
+## XGBoost on 1-Hot Dummy Enocded, Downsampled Data
+
+```{r}
+# train XGBoost model with cross validation on 1-hot dummy encoded, downsampled training data
+# xgb_dmy_model <- caret::train(
+#   loan_default ~ .,
+#   data = train.dummy,
+#   method = 'xgbTree',
+#   trControl = cv_control,
+#   tuneLength = 5
+# )
+# saveRDS(xgb_dmy_model, 'XGBoost_dmy.rds')
 ```
 
 ```{r}
+# stop parallel processing
 stopCluster(c1)
 registerDoSEQ()
 ```
 
 
-# evaluating model
+# Model Evaluation
+
+## Downsampled Data
 
 ```{r}
-print(xgb_model$bestTune)
-#consider iterating over the tuneGrid and manually adjusting hyperparameters rather than haveing them randomly selected
+# reading in the previously saved model
+xgb_model <- read_rds('xgboost.rds')
 ```
 
+```{r}
+#printing the hyperparameters selected 
+print(xgb_model$bestTune)
+```
 
 ```{r}
 # read in the predictions from the pruned decision trees
@@ -98,6 +168,7 @@ pred.holdout <- readr::read_rds('holdout_predictions.rds')
 ```
 
 ```{r}
+# save predicted probability for the holdout data
 pred.holdout$xgb_prob <- predict(xgb_model,
                                    newdata = holdout,
                                    type = 'prob')[,'Yes']
@@ -147,8 +218,6 @@ opt_f1 <- df_f1[opt_idx,]
 opt_f1
 ```
 
-
-
 ```{r}
 best_thresh <- .6110328
 pred.holdout$xgb_class <- factor(
@@ -157,140 +226,33 @@ pred.holdout$xgb_class <- factor(
 ```
 
 ```{r}
-# print a confusion matrix for the random forest model
+# print a confusion matrix for the model trained on downsampled data
 caret::confusionMatrix(pred.holdout$xgb_class,
                        pred.holdout$loan_default,
                        positive = 'Yes')
 ```
+**The model trained on the regular downsampled data has an optimal predicted probability threshold of 0.6110328 based on maximizing the f1 score, which was 0.5968023. The other important metrics are as follow: AUC = 0.8562062, Accuracy = 0.8156, Sensitivity = 0.6955, Specificity = 0.8449** 
 
 ```{r}
 # variable importance
 caret::varImp(xgb_model, type = 2)
 ```
 
+**We evaluated the variable importance for the model and fount that years since last credit pull was by far the most important variable in the model with interest rate and debt settlement flag (yes) being the next most important variables**
 
+## 1-Hot Dummy Encoded, Downsampled Model
 
 ```{r}
-saveRDS(xgb_model, 'xgboost.rds')
+xgb_dmy_model <- read_rds('XGBoost_dmy.rds')
 ```
 
 ```{r}
-# comparing the important model metrics into one dataframe
-
-# saving the observed classifications
-truth <- pred.holdout$loan_default
-
-# Get model names based on .prob columns
-model_names <- names(pred.holdout) %>%
-  stringr::str_subset("\\_prob$") %>%
-  stringr::str_remove("\\_prob$")
-
-# Function to compute metrics for each model
-get_metrics <- function(model_name) {
-  prob_col <- paste0(model_name, "_prob")
-  class_col <- paste0(model_name, "_class")
-
-  # Extract predictions
-  prob <- pred.holdout[[prob_col]]
-  pred <- factor(pred.holdout[[class_col]], levels = c("No", "Yes"))
-
-  # Confusion matrix
-  cm <- caret::confusionMatrix(pred, truth, positive = "Yes")
-
-  # AUC
-  roc_obj <- pROC::roc(truth, prob, quiet = TRUE)
-
-  # Metrics
-  data.frame(
-    Model = model_name,
-    Accuracy = cm$overall["Accuracy"],
-    Sensitivity = cm$byClass["Sensitivity"],
-    Specificity = cm$byClass["Specificity"],
-    F1 = MLmetrics::F1_Score(
-      y_pred = pred,
-      y_true = truth,
-      positive = "Yes"
-    ),
-    AUC = as.numeric(roc_obj$auc)
-  )
-}
-
-# Apply to all models
-results_df <- dplyr::bind_rows(lapply(model_names, get_metrics))
-
-# Remove row names and display
-rownames(results_df) <- NULL
-print(results_df)
-```
-
-```{r}
-#saving holdout dataframe to be used with other models
-saveRDS(pred.holdout, 'holdout_predictions.rds')
-```
-
-
-# 1 hot dummy data
-
-```{r}
-# 1 hot dummy encoding. 
-dummies <- caret::dummyVars(~ . - loan_default, 
-                            data = train.ds,
-                            fullRank = FALSE)
-```
-
-```{r}
-train.dummy <- data.frame(predict(dummies, newdata = train.ds))
-
-train.dummy <- cbind(train.dummy, loan_default = train.ds$loan_default)
-```
-
-```{r}
-# 1 hot dummy encoding. 
-dummies <- caret::dummyVars(~ . - loan_default, 
-                            data = holdout,
-                            fullRank = FALSE)
-```
-
-```{r}
-holdout.dummy <- data.frame(predict(dummies, newdata = holdout))
-
-holdout.dummy <- cbind(holdout.dummy, loan_default = holdout$loan_default)
-```
-
-#1 hot dmy model
-
-```{r}
-c1 <- parallel::makeCluster(8)
-registerDoParallel(c1)
-```
-
-```{r}
-# set up train control
-cv_control <- trainControl(method = 'cv', number = 10, allowParallel = TRUE)
-```
-
-```{r}
-xgb_dmy_model <- caret::train(
-  loan_default ~ .,
-  data = train.dummy,
-  method = 'xgbTree',
-  trControl = cv_control,
-  tuneLength = 5
-)
-```
-
-```{r}
-stopCluster(c1)
-registerDoSEQ()
-```
-
-```{r}
+#printing the hyperparameters selected 
 print(xgb_dmy_model$bestTune)
-#consider iterating over the tuneGrid and manually adjusting hyperparameters rather than haveing them randomly selected
 ```
 
 ```{r}
-
+# save predicted probability for the dummy encoded holdout data
 pred.holdout$xgb_dmy_prob <- predict(xgb_dmy_model,
                                    newdata = holdout.dummy,
                                    type = 'prob')[,'Yes']
@@ -299,28 +261,28 @@ pred.holdout$xgb_dmy_prob <- predict(xgb_dmy_model,
 
 ```{r}
 # computing ROC of curve
-pred <- ROCR::prediction(pred.holdout$xgb_dmy_prob,
+pred2 <- ROCR::prediction(pred.holdout$xgb_dmy_prob,
                          pred.holdout$loan_default)
-perf <- ROCR::performance(pred, 'tpr', 'fpr')
+perf2 <- ROCR::performance(pred, 'tpr', 'fpr')
 ```
 
 ```{r}
 # plotting ROC curve
-plot(perf, col = 'blue', lwd = 2, main = 'ROC Curve for Cross-Validated Training Model')
+plot(perf2, col = 'blue', lwd = 2, main = 'ROC Curve for Cross-Validated Training Model')
 abline(a = 0, b = 1, col = 'red', lty = 2, lwd =2)
 ```
 
 ```{r}
 # AUC of above curve
-ROCR::performance(pred, 'auc')@y.values[[1]]
+ROCR::performance(pred2, 'auc')@y.values[[1]]
 ```
 
 ```{r}
 # finding the optimal threshold
 
 #finding precision and recall
-prec <- ROCR::performance(pred, 'prec')
-rec <- ROCR::performance(pred, 'rec')
+prec <- ROCR::performance(pred2, 'prec')
+rec <- ROCR::performance(pred2, 'rec')
 
 # extracting precision and recall
 precision <- prec@y.values[[1]]
@@ -340,8 +302,6 @@ opt_f1 <- df_f1[opt_idx,]
 opt_f1
 ```
 
-
-
 ```{r}
 best_thresh <- 0.6436434
 pred.holdout$xgb_dmy_class <- factor(
@@ -349,27 +309,29 @@ pred.holdout$xgb_dmy_class <- factor(
          'Yes', 'No'))
 ```
 
-```{r}
-#saving holdout dataframe to be used with other models
-saveRDS(pred.holdout, 'holdout_predictions.rds')
-```
 
 ```{r}
-# print a confusion matrix for the random forest model
+# print a confusion matrix for the model trained on dummy encoded data
 caret::confusionMatrix(pred.holdout$xgb_dmy_class,
                        pred.holdout$loan_default,
                        positive = 'Yes')
 ```
+
+**The model trained on the regular downsampled data has an optimal predicted probability threshold of 0.6436434 based on maximizing the f1 score, which was 0.5992124. The other important metrics are as follow: AUC = 0.8562651, Accuracy = 0.8239, Sensitivity = 0.6708, Specificity = 0.8613**
 
 ```{r}
 # variable importance
 caret::varImp(xgb_dmy_model, type = 2)
 ```
 
+**We evaluated the variable importance for the model and fount that years since last credit pull was by far the most important variable in the model with interest rate and debt settlement flag (no) being the next most important variables**
 
 ```{r}
-saveRDS(xgb_dmy_model, 'XGBoost_dmy.rds')
+#saving holdout dataframe to be used with other models
+saveRDS(pred.holdout, 'holdout_predictions.rds')
 ```
+
+# Model Comparison
 
 ```{r}
 # comparing the important model metrics into one dataframe
@@ -417,10 +379,36 @@ results_df <- dplyr::bind_rows(lapply(model_names, get_metrics))
 
 # Remove row names and display
 rownames(results_df) <- NULL
-print(results_df)
+print(results_df[3:4,])
 ```
 
 ```{r}
-saveRDS(results_df, 'model_performances.rds')
-```
+# compare models by plotting ROC curves
+roc_ds <- pROC::roc(holdout$loan_default, 
+                    predict(xgb_model, 
+                            holdout, 
+                            type = "prob")[, "Yes"])
+roc_ds_dmy <- pROC::roc(holdout.dummy$loan_default, 
+                        predict(xgb_dmy_model, 
+                                holdout.dummy, 
+                                type = "prob")[, "Yes"])
 
+plot(roc_ds, col = "blue", lwd = 2, main = "ROC Curves for XGBoost Models")
+plot(roc_ds_dmy, add = TRUE, col = "red", lwd = 2)
+
+legend("bottomright",
+       legend = c(
+         paste0("Downsampled AUC = ", 
+                ROCR::performance(pred, 'auc')@y.values[[1]]),
+         paste0("1Hot Dummy AUC = ", 
+                ROCR::performance(pred2, 'auc')@y.values[[1]])
+       ),
+       col = c("blue", "red", "darkgreen"),
+       lwd = 2,
+       cex = 0.8)
+```
+**Both models perform similarly across all of the metrics that we are evaluating with the greatest difference between any metric for the 2 models being 0.025. There is almost no visible deviation from the two ROC lines plotted above.**
+
+# Final Model
+
+**Since we are most concerned about maximizing the f1 score for out models in this project, the XGBoost model fit on the 1-hot dummy encoded performed just slightly better with and f1 of 0.5991721. This model also performed slightly better on all of our other metrics except for sensitivity in which it performed slightly worse.**
