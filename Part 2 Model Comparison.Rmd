@@ -1,0 +1,289 @@
+---
+title: 'Model Comparison'
+author: "Harrison Cradduck, Nick Berry"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_float: yes
+    code_download: yes
+  word_document:
+    toc: no
+---
+
+```{r setup, include = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(fig.width = 8, fig.height = 6)
+set.seed(123)
+
+if(require(pacman) == 0)
+   {install.packages("pacman")}
+pacman::p_load(devtools, caret, cluster, dplyr, fastDummies, leaps, pacman, tidyverse, skimr, fastDummies, GGally, DataExplorer, ggrepel, ggthemes, dslabs, lubridate, stringr, tidytext, purrr, ROSE, doParallel, xgboost)
+
+if (!require(mlba)) {
+  library(devtools)
+  install_github("gedeck/mlba/mlba", force = TRUE)
+}
+pacman::p_load(mlba, tidyverse)
+```
+
+# Data Loading
+
+## Trees
+
+Read in the RDS files for the best decision tree, Random Forest, and XGBoost models.
+
+```{r}
+# read in .rds for best decision tree
+best_tree <- read_rds("../part2_files/dummy_best_tree.rds")
+
+# read in .rds for best random forest model
+best_rf <- read_rds("../part2_files/rf_tree1_better.rds")
+
+# read in .rds for best XGBoost model
+best_xgb <- read_rds("../part2_files/xgb_tree3.rds")
+```
+
+## Holdout Data Set
+
+Read in the holdout data sets used for each model.
+
+### Decision Tree
+
+```{r}
+# read in .csv training data file
+data_train <- readRDS("../data/final_cleaned_train_part2.rds")
+
+# read in .csv holdout data file
+data_holdout <- readRDS("../data/final_cleaned_holdout_part2.rds")
+
+# set response variable
+response <- "loan_default"
+
+# set predictor variables
+predictor_cols <- setdiff(names(data_train), response)
+
+# create dummy variables for all factor columns in data_train
+data_train_tree <- fastDummies::dummy_cols(
+  data_train[, predictor_cols],
+  remove_first_dummy = FALSE,
+  remove_selected_columns = TRUE
+)
+data_train_tree[[response]] <- data_train[[response]]
+
+colnames(data_train_tree) <- make.names(colnames(data_train_tree))
+
+# create dummy variables for all factor columns in data_holdout
+data_holdout_tree <- fastDummies::dummy_cols(
+  data_holdout[, predictor_cols],
+  remove_first_dummy = FALSE,
+  remove_selected_columns = TRUE
+)
+data_holdout_tree[[response]] <- data_holdout[[response]]
+
+colnames(data_holdout_tree) <- make.names(colnames(data_train_tree))
+```
+
+### Random Forest Model
+
+```{r}
+# read in .csv holdout data file
+data_holdout_rf <- readRDS("../data/final_cleaned_holdout_part2_better.rds")
+```
+
+### XGBoost Model
+
+```{r}
+# remove unimportant variables
+data_holdout_xgb <- data_holdout_rf %>% dplyr::select(-sub_grade, -yrs_since_last_delinq, -verification_status, -mort_acc, -delinq_2yrs)
+```
+
+# Model Predictions and Metrics
+
+```{r}
+# predict probabilities on holdout
+best_tree_pred_prob <- predict(best_tree, data_holdout_tree, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout_tree$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(best_tree_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_tree <- perf_auc@y.values[[1]]
+print(auc_tree)
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_tree <- which.max(f1)
+best_thresh_tree <- thresholds[best_index_tree]
+best_f1_tree <- f1[best_index_tree]
+
+# print results
+cat("Best threshold:", best_thresh_tree, "\n")
+cat("Best F1 score:", best_f1_tree, "\n")
+
+# create final class predictions using best threshold
+best_tree_pred_class <- factor(
+  ifelse(best_tree_pred_prob >= best_thresh_tree, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(best_tree_pred_class, data_holdout_tree$loan_default, positive = "Yes")
+print(cm)
+```
+
+```{r}
+# predict probabilities on holdout
+best_rf_pred_prob <- predict(best_rf, data_holdout_rf, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout_rf$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(best_rf_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_rf <- perf_auc@y.values[[1]]
+print(auc_rf)
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_rf <- which.max(f1)
+best_thresh_rf <- thresholds[best_index_rf]
+best_f1_rf <- f1[best_index_rf]
+
+# print results
+cat("Best threshold:", best_thresh_rf, "\n")
+cat("Best F1 score:", best_f1_rf, "\n")
+
+# create final class predictions using best threshold
+best_rf_pred_class <- factor(
+  ifelse(best_rf_pred_prob >= best_thresh_rf, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(best_rf_pred_class, data_holdout_rf$loan_default, positive = "Yes")
+print(cm)
+```
+
+```{r}
+# predict probabilities on holdout
+best_xgb_pred_prob <- predict(best_xgb, data_holdout_xgb, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout_xgb$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(best_xgb_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_xgb <- perf_auc@y.values[[1]]
+print(auc_xgb)
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_xgb <- which.max(f1)
+best_thresh_xgb <- thresholds[best_index_xgb]
+best_f1_xgb <- f1[best_index_xgb]
+
+# print results
+cat("Best threshold:", best_thresh_xgb, "\n")
+cat("Best F1 score:", best_f1_xgb, "\n")
+
+# create final class predictions using best threshold
+best_xgb_pred_class <- factor(
+  ifelse(best_xgb_pred_prob >= best_thresh_xgb, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(best_xgb_pred_class, data_holdout_xgb$loan_default, positive = "Yes")
+print(cm)
+```
+
+# Model Comparison
+
+```{r}
+# compare models
+comparison <- data.frame(
+  Model = c("Best Tree", "Best Random Forest", "Best XGBoost"),
+  AUC = c(auc_tree, auc_rf, auc_xgb),
+  Best_Threshold = c(best_thresh_tree, best_thresh_rf, best_thresh_xgb),
+  Best_F1 = c(best_f1_tree, best_f1_rf, best_f1_xgb)
+)
+comparison <- comparison[order(-comparison$Best_F1), ]
+print(comparison)
+```
+
+**The model comparison above shows that the best XGBoost model results in the highest F1 score, while the best Random Forest results in the second highest F1 score. All three models result in very similar F1 scores but vary in thresholds.**
+
+```{r}
+# compare models by plotting ROC curves
+roc_tree <- pROC::roc(data_holdout_tree$loan_default, predict(best_tree, data_holdout_tree, type = "prob")[, "Yes"])
+roc_rf <- pROC::roc(data_holdout_rf$loan_default, predict(best_rf, data_holdout_rf, type = "prob")[, "Yes"])
+roc_xgb <- pROC::roc(data_holdout_xgb$loan_default, predict(best_xgb, data_holdout_xgb, type = "prob")[, "Yes"])
+
+plot(roc_tree, col = "blue", lwd = 2, main = "ROC Curves for Best Models")
+plot(roc_rf, add = TRUE, col = "red", lwd = 2)
+plot(roc_xgb, add = TRUE, col = "darkgreen", lwd = 2)
+
+legend("bottomright",
+       legend = c(
+         paste0("Best Tree AUC = ", auc_tree),
+         paste0("Best Random Forest AUC = ", auc_rf),
+         paste0("Best XGBoost AUC = ", auc_xgb)
+       ),
+       col = c("blue", "red", "darkgreen"),
+       lwd = 2,
+       cex = 0.8)
+```
+
+**The ROC curve comparison above shows almost the exact same curve for the best Random Forest and XGBoost models. In terms of AUC, the best XGBoost model has the highest value at 0.8555, and the best Random Forest model has the second highest value at 0.8469.**
+
+# Final Model
+
+**The final model chosen is the best XGBoost model, built using 5-fold cross validation and a tuneLength of 5. The model was evaluated on the improved, downsampled holdout data set, and an optimal probability threshold of 0.6178181	was selected to maximize the F1 score at 0.5971644. This threshold-adjusted tree represents our final classification rule, optimized for F1 balance between precision and recall.**
