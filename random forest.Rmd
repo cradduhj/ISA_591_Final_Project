@@ -44,11 +44,11 @@ holdout <- readr::read_rds('decision_tree_holdout.rds')
 ```
 
 ```{r}
-# set seed for ability to reproduce downsampleing and modeling
+# set seed for ability to reproduce downsampling and modeling
 set.seed(123)
 ```
 
-#Downsampling
+# Downsampling
 
 **For our Random Forest models we decided to move forward with just the downsampled data for the sake of computational complexity**
 
@@ -341,7 +341,12 @@ caret::varImp(rf_cv_dmy, type = 2)
 randomForest::varImpPlot(rf_cv_dmy$finalModel, type = 2)
 ```
 
-**We evaluated the variable importance for the model and fount that years since last credit pull was by far the most important variable in the model with interest rate being the next most important before seeing another drastic dropoff in importance.**
+**We evaluated the variable importance for the model and fount that years since last credit pull was by far the most important variable in the model with interest rate being the next most important before seeing another drastic drop off in importance.**
+
+```{r}
+# saving the holdout predictions to compare to future models
+saveRDS(pred.holdout, 'holdout_predictions.rds')
+```
 
 # Model Comparison
 
