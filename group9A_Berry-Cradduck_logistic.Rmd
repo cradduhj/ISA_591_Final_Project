@@ -1,0 +1,442 @@
+---
+title: 'Part 3 Logistic Regression'
+author: "Harrison Cradduck, Nick Berry"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_float: yes
+    code_download: yes
+  word_document:
+    toc: no
+---
+
+```{r setup, include = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(fig.width = 8, fig.height = 6)
+set.seed(123)
+
+if(require(pacman) == 0)
+   {install.packages("pacman")}
+pacman::p_load(devtools, caret, cluster, dplyr, fastDummies, leaps, pacman, tidyverse, skimr, fastDummies, GGally, DataExplorer, ggrepel, ggthemes, dslabs, lubridate, stringr, tidytext, purrr, ROSE, doParallel)
+
+if (!require(mlba)) {
+  library(devtools)
+  install_github("gedeck/mlba/mlba", force = TRUE)
+}
+pacman::p_load(mlba, tidyverse)
+```
+
+# Introduction
+
+**In this phase, we worked with our cleaned loan default data to build a regularized logistic regression model and test how well it performs on the holdout dataset. We used an elastic net regularization approach when training our model on the preprocessed training data.**
+
+# Data Loading
+
+Load in the training and holdout data sets tailored for Part 3 (logistic regression).
+
+```{r}
+# read in .csv training data file
+data_train <- readRDS("../data/final_cleaned_train_part3.rds")
+```
+
+```{r}
+# read in .csv holdout data file
+data_holdout <- readRDS("../data/final_cleaned_holdout_part3.rds")
+```
+
+## Dummy-coding
+
+Create training and holdout data sets with dummy-coded factor variables. Add in interaction terms for dummy-coded training and holdout data here to resolve issues later.
+
+```{r}
+# set response variable
+response <- "loan_default"
+
+# set predictor variables
+predictor_cols <- setdiff(names(data_train), response)
+
+# create dummy variables for all factor columns in data_train
+data_train_dummy <- fastDummies::dummy_cols(
+  data_train[, predictor_cols],
+  remove_first_dummy = FALSE,
+  remove_selected_columns = TRUE
+)
+data_train_dummy[[response]] <- data_train[[response]]
+
+colnames(data_train_dummy) <- make.names(colnames(data_train_dummy))
+
+dummy_cols <- grep("last_credit_pull_d_years_since_grouped", 
+                   names(data_train_dummy), value = TRUE)
+
+for(colname in dummy_cols) {
+  newname <- paste0("fico_x_", colname)
+  data_train_dummy[[newname]] <- 
+    data_train_dummy$fico_range_avg * data_train_dummy[[colname]]
+}
+
+# create dummy variables for all factor columns in data_holdout
+data_holdout_dummy <- fastDummies::dummy_cols(
+  data_holdout[, predictor_cols],
+  remove_first_dummy = FALSE,
+  remove_selected_columns = TRUE
+)
+data_holdout_dummy[[response]] <- data_holdout[[response]]
+
+colnames(data_holdout_dummy) <- make.names(colnames(data_train_dummy))
+
+for(colname in dummy_cols) {
+  newname <- paste0("fico_x_", colname)
+  data_holdout_dummy[[newname]] <- 
+    data_holdout_dummy$fico_range_avg * data_holdout_dummy[[colname]]
+}
+```
+
+## Downsampling
+
+Create a downsampled training data set and a downsampled dummy-coded training data set by undersampling the majority class of `loan_default`.
+
+```{r}
+# down-sample the training data
+data_train_ds <- ovun.sample(loan_default ~ ., data = data_train, method = "under")$data
+```
+
+```{r}
+# down-sample the dummy training data
+data_train_dummy_ds <- ovun.sample(loan_default ~ ., data = data_train_dummy, method = "under")$data
+```
+
+# Modeling
+
+```{r}
+# set seed for reproducibility
+set.seed(123)
+```
+
+Set up parallel processing.
+
+```{r}
+# detect available cores
+n_cores <- parallel::detectCores() - 1
+
+# create and register cluster
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+```
+
+Set up 10-fold cross-validation.
+
+```{r}
+# set up cross-validation
+ctrl <- trainControl(
+  method = "cv",
+  number = 10,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary,
+  savePredictions = "final",
+  allowParallel = TRUE
+)
+```
+
+## Logistic Regression
+
+### Original Training Data
+
+Fit a logistic regression on the original training data using elastic net regularization.
+
+```{r}
+# fit a logistic regression model to the original training data
+# log_reg1 <- train(
+#   loan_default ~ . + fico_range_avg*last_credit_pull_d_years_since_grouped, 
+#   data = data_train,
+#   method = "glmnet",
+#   trControl = ctrl,
+#   tuneGrid = expand.grid(
+#     alpha = seq(0.15, 0.4, 0.05), 
+#     lambda = 0.01),      # seq(0.01, 0.11, length = 10)),
+#   metric = "ROC",
+#   family = "binomial"
+# )
+
+# save model as .rds file to save time in knitting
+# saveRDS(log_reg1, file = "log_reg1.rds")
+# read in .rds file to save time in knitting
+log_reg1 <- readRDS("log_reg1.rds")
+
+plot(log_reg1)
+log_reg1$bestTune
+log_reg1$results
+coef(log_reg1$finalModel,log_reg1$bestTune$lambda)
+```
+
+**We iterated through different sequences of both alpha (starting at 0 to 1 by 0.01, ending with 0.15 to 0.4 by 0.05) and lambda (0.01 to 0.11 by 0.01) to optimize our logistic regression model on ROC. The optimal values of alpha and lambda for the elastic net regularization approach are alpha = 0.15 and lambda = 0.01.**
+
+```{r}
+# predict probabilities on holdout
+log_reg1_pred_prob <- predict(log_reg1, data_holdout, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(log_reg1_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_log_reg1 <- perf_auc@y.values[[1]]
+print(auc_log_reg1)
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_log_reg1 <- which.max(f1)
+best_thresh_log_reg1 <- thresholds[best_index_log_reg1]
+best_f1_log_reg1 <- f1[best_index_log_reg1]
+
+# print results
+cat("Best threshold:", best_thresh_log_reg1, "\n")
+cat("Best F1 score:", best_f1_log_reg1, "\n")
+
+# create final class predictions using best threshold
+log_reg1_pred_class <- factor(
+  ifelse(log_reg1_pred_prob >= best_thresh_log_reg1, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(log_reg1_pred_class, data_holdout$loan_default, positive = "Yes")
+print(cm)
+```
+
+**After optimizing our logistic regression model on the original training data using an elastic net regularization approach, the metrics of optimal model prediction performance are as follows: AUC = 0.842, threshold = 0.284, F1 = 0.584, accuracy = 0.81, sensitivity = 0.68, and specificity = 0.842.**
+
+### Downsampled Training Data
+
+Fit a logistic regression on the downsampled training data using elastic net regularization.
+
+```{r}
+# fit a logistic regression model to the downsampled training data
+# log_reg2 <- train(
+#   loan_default ~ . + fico_range_avg*last_credit_pull_d_years_since_grouped, 
+#   data = data_train_ds,
+#   method = "glmnet",
+#   trControl = ctrl,
+#   tuneGrid = expand.grid(
+#     alpha = seq(0.001, 0.021, 0.004), 
+#     lambda = seq(0.001, 0.011, length = 10)),
+#   metric = "ROC",
+#   family = "binomial"
+# )
+
+# save model as .rds file to save time in knitting
+# saveRDS(log_reg2, file = "log_reg2.rds")
+# read in .rds file to save time in knitting
+log_reg2 <- readRDS("log_reg2.rds")
+
+plot(log_reg2)
+log_reg2$bestTune
+log_reg2$results
+coef(log_reg2$finalModel,log_reg2$bestTune$lambda)
+```
+
+**We iterated through different sequences of both alpha (starting at 0 to 1 by 0.01, ending with 0.001 to 0.021 by 0.004) and lambda (starting at 0.01 to 0.1 by 0.01, ending with 0.001 to 0.011 by 0.001) to optimize our logistic regression model on ROC. The optimal values of alpha and lambda for the elastic net regularization approach are alpha = 0.017 and lambda = 0.001.**
+
+```{r}
+# predict probabilities on holdout
+log_reg2_pred_prob <- predict(log_reg2, data_holdout, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(log_reg2_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_log_reg2 <- perf_auc@y.values[[1]]
+print(auc_log_reg2)
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_log_reg2 <- which.max(f1)
+best_thresh_log_reg2 <- thresholds[best_index_log_reg2]
+best_f1_log_reg2 <- f1[best_index_log_reg2]
+
+# print results
+cat("Best threshold:", best_thresh_log_reg2, "\n")
+cat("Best F1 score:", best_f1_log_reg2, "\n")
+
+# create final class predictions using best threshold
+log_reg2_pred_class <- factor(
+  ifelse(log_reg2_pred_prob >= best_thresh_log_reg2, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(log_reg2_pred_class, data_holdout$loan_default, positive = "Yes")
+print(cm)
+```
+
+**After optimizing our logistic regression model on the downsampled training data using an elastic net regularization approach, the metrics of optimal model prediction performance are as follows: AUC = 0.844, threshold = 0.622, F1 = 0.585, accuracy = 0.812, sensitivity = 0.68, and specificity = 0.846.**
+
+### Dummy-coded Training Data
+
+Fit a logistic regression on the dummy-coded training data using elastic net regularization.
+
+**We attempted to iterate through different sequences of both alpha (0 to 1 by 0.1) and lambda (0.01 to 0.11 by 0.01) on the dummy-coded training data to optimize our logistic regression model on ROC, but after four hours of running, the model still would not fit. Considering our models fit on the downsampled data have worked best previously, we chose to move on from attempting to fit a model on the dummy-coded training data and instead focus on the downsampled training data sets.**
+
+### Downsampled Dummy-coded Training Data
+
+Fit a logistic regression on the downsampled, dummy-coded training data using elastic net regularization.
+
+```{r}
+# fit a logistic regression model to the downsampled dummy-coded training data
+# log_reg4 <- train(
+#   loan_default ~ ., 
+#   data = data_train_dummy_ds,
+#   method = "glmnet",
+#   trControl = ctrl,
+#   tuneGrid = expand.grid(
+#     alpha = seq(0.001, 0.021, 0.004), 
+#     lambda = seq(0.001, 0.011, length = 10)),
+#   metric = "ROC",
+#   family = "binomial"
+# )
+
+# save model as .rds file to save time in knitting
+# saveRDS(log_reg4, file = "log_reg4.rds")
+# read in .rds file to save time in knitting
+log_reg4 <- readRDS("log_reg4.rds")
+
+plot(log_reg4)
+log_reg4$bestTune
+log_reg4$results
+coef(log_reg4$finalModel,log_reg4$bestTune$lambda)
+```
+
+**We iterated through different sequences of both alpha (starting at 0 to 1 by 0.01, ending with 0.001 to 0.021 by 0.004) and lambda (starting at 0.01 to 0.1 by 0.01, ending with 0.001 to 0.011 by 0.001) to optimize our logistic regression model on ROC. The optimal values of alpha and lambda for the elastic net regularization approach are alpha = 0.017 and lambda = 0.001.**
+
+```{r}
+# predict probabilities on holdout
+log_reg4_pred_prob <- predict(log_reg4, data_holdout_dummy, type = "prob")[, "Yes"]
+
+# create true labels (1 = Yes, 0 = No)
+true_labels <- ifelse(data_holdout_dummy$loan_default == "Yes", 1, 0)
+
+# use ROCR to evaluate across thresholds
+pred <- ROCR::prediction(log_reg4_pred_prob, true_labels)
+
+# get precision-recall performance
+perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
+
+# compute AUC
+perf_auc <- ROCR::performance(pred, measure = "auc")
+auc_log_reg4 <- perf_auc@y.values[[1]]
+print(auc_log_reg4)
+
+# extract values
+precision <- perf@y.values[[1]]
+recall <- perf@x.values[[1]]
+thresholds <- perf@alpha.values[[1]]
+
+# compute F1
+f1 <- 2 * (precision * recall) / (precision + recall)
+f1[is.nan(f1)] <- 0
+
+# find best threshold and F1
+best_index_log_reg4 <- which.max(f1)
+best_thresh_log_reg4 <- thresholds[best_index_log_reg4]
+best_f1_log_reg4 <- f1[best_index_log_reg4]
+
+# print results
+cat("Best threshold:", best_thresh_log_reg4, "\n")
+cat("Best F1 score:", best_f1_log_reg4, "\n")
+
+# create final class predictions using best threshold
+log_reg4_pred_class <- factor(
+  ifelse(log_reg4_pred_prob >= best_thresh_log_reg4, "Yes", "No"),
+  levels = c("No", "Yes")
+)
+
+# confusion matrix with optimal threshold
+cm <- caret::confusionMatrix(log_reg4_pred_class, data_holdout_dummy$loan_default, positive = "Yes")
+print(cm)
+```
+
+**After optimizing our logistic regression model on the downsampled dummy-coded training data using an elastic net regularization approach, the metrics of optimal model prediction performance are as follows: AUC = 0.845, threshold = 0.629, F1 = 0.585, accuracy = 0.814, sensitivity = 0.669, and specificity = 0.849.**
+
+```{r}
+# stop cluster
+stopCluster(cl)
+registerDoSEQ()
+```
+
+# Model Comparison
+
+```{r}
+# compare models
+comparison <- data.frame(
+  Model = c("Original", "Downsampled", "Dummy + Downsampled"),
+  Best_Threshold = c(best_thresh_log_reg1, best_thresh_log_reg2, best_thresh_log_reg4),
+  Best_F1 = c(best_f1_log_reg1, best_f1_log_reg2, best_f1_log_reg4)
+)
+comparison <- comparison[order(-comparison$Best_F1), ]
+print(comparison)
+```
+
+**The model comparison above shows that the logistic regression model fit using the downsampled dummy-coded training data set results in the highest F1 score of 0.5853. All three models result in very similar F1 scores, however, the optimal threshold for the original training data set is much lower than the other two, slightly better models.**
+
+```{r}
+# compare models by plotting ROC curves
+roc_og <- pROC::roc(data_holdout$loan_default, predict(log_reg1, data_holdout, type = "prob")[, "Yes"])
+roc_ds <- pROC::roc(data_holdout$loan_default, predict(log_reg2, data_holdout, type = "prob")[, "Yes"])
+# roc_dummy <- pROC::roc(data_holdout_dummy$loan_default, predict(log_reg3, data_holdout_dummy, type = "prob")[, "Yes"])
+roc_dummy_ds <- pROC::roc(data_holdout_dummy$loan_default, predict(log_reg4, data_holdout_dummy, type = "prob")[, "Yes"])
+
+plot(roc_og, col = "blue", lwd = 2, main = "ROC Curves for Logistic Regression Models")
+plot(roc_ds, add = TRUE, col = "red", lwd = 2)
+# plot(roc_dummy, add = TRUE, col = "darkgreen", lwd = 2)
+plot(roc_dummy_ds, add = TRUE, col = "purple", lwd = 2)
+
+legend("bottomright",
+       legend = c(
+         paste0("Original (AUC = ", round(pROC::auc(roc_og), 3), ")"),
+         paste0("Downsampled (AUC = ", round(pROC::auc(roc_ds), 3), ")"),
+         # paste0("Dummy (AUC = ", round(pROC::auc(roc_dummy), 3), ")"),
+         paste0("Dummy + Downsampled (AUC = ", round(pROC::auc(roc_dummy_ds), 3), ")")
+       ),
+       col = c("blue", "red", "darkgreen", "purple"),
+       lwd = 2,
+       cex = 0.8)
+```
+
+**The ROC curve comparison above shows almost the exact same curve for all three models. In terms of AUC, the logistic regression model fit using the downsampled dummy-coded training data set has the highest value at 0.845, and the model fit using the downsampled training data set has the second highest value at 0.844.**
+
+# Final Model
+
+**The final logistic regression model chosen is the model trained on the downsampled dummy-coded training data set built using 10-fold cross validation. The model was evaluated on the dummy-coded holdout data set, and an optimal probability threshold of 0.629 was selected to maximize the F1 score at 0.5853507. This threshold-adjusted model represents our final classification rule, optimized for F1 balance between precision and recall.**
