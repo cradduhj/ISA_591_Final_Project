@@ -15,3 +15,8 @@ xgb.cv(5folds,5tuneLength, 0.618) | better downsampled | 0.8289 | 0.6453 | 0.873
 xgb.cv(5folds,5tuneLength,0.634) | better important downsampled | 0.8224 | 0.6702 | 0.8595 | 0.8556 | 0.5967959 | N/A
 
 xgb.cv(5folds,5tuneLength,0.6703 | downsampled | 0.8289 | 0.6453 | 0.8737 | 0.8558 | 0.5966552 | N/A
+
+Model Type | Train Data | Accuracy | Sensitivity | Specificity | AUC | F1 | threshold
+log.cv(10 folds) | original | 0.8104 | 0.6795 | 0.8424 | 0.8422 | 0.5844 | 0.284
+log.cv(10 folds) | downsampled | 0.8122 | 0.6755 | 0.8456 | 0.8442 | 0.5853 | 0.6221
+log.cv(10 folds) | downsampled dummy-coded | 0.814 | 0.6692 | 0.8493 | 0.8449 | 0.5854 | 0.629
