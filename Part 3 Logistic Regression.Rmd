@@ -33,7 +33,7 @@ pacman::p_load(mlba, tidyverse)
 
 # Introduction
 
-**In this phase, you’ll work with your cleaned loan default data to build a regularized logistic regression model and test how well it performs on the holdout dataset. Use an elastic net regularization approach when training your model on the preprocessed training data.**
+**In this phase, we worked with our cleaned loan default data to build a regularized logistic regression model and test how well it performs on the holdout dataset. We used an elastic net regularization approach when training our model on the preprocessed training data.**
 
 # Data Loading
 
@@ -162,9 +162,9 @@ Fit a logistic regression on the original training data using elastic net regula
 #   family = "binomial"
 # )
 
-# save model as .rds file
+# save model as .rds file to save time in knitting
 # saveRDS(log_reg1, file = "log_reg1.rds")
-# read in .rds file
+# read in .rds file to save time in knitting
 log_reg1 <- readRDS("log_reg1.rds")
 
 plot(log_reg1)
@@ -242,9 +242,9 @@ Fit a logistic regression on the downsampled training data using elastic net reg
 #   family = "binomial"
 # )
 
-# save model as .rds file
+# save model as .rds file to save time in knitting
 # saveRDS(log_reg2, file = "log_reg2.rds")
-# read in .rds file
+# read in .rds file to save time in knitting
 log_reg2 <- readRDS("log_reg2.rds")
 
 plot(log_reg2)
@@ -308,79 +308,7 @@ print(cm)
 
 Fit a logistic regression on the dummy-coded training data using elastic net regularization.
 
-```{r}
-# # fit a logistic regression model to the dummy-coded training data
-# log_reg3 <- train(
-#   loan_default ~ ., 
-#   data = data_train_dummy,
-#   method = "glmnet",
-#   trControl = ctrl,
-#   tuneGrid = expand.grid(
-#     alpha = seq(0, 1, 0.1), 
-#     lambda = seq(0.01, 0.11, length = 10)),
-#   metric = "ROC",
-#   family = "binomial"
-# )
-# 
-# # save model as .rds file
-# saveRDS(log_reg3, file = "log_reg3.rds")
-# # read in .rds file
-# # log_reg3 <- readRDS("log_reg3.rds")
-# 
-# plot(log_reg3)
-# log_reg3$bestTune
-# log_reg3$results
-# coef(log_reg3$finalModel,log_reg1$bestTune$lambda)
-```
-
 **We attempted to iterate through different sequences of both alpha (0 to 1 by 0.1) and lambda (0.01 to 0.11 by 0.01) on the dummy-coded training data to optimize our logistic regression model on ROC, but after four hours of running, the model still would not fit. Considering our models fit on the downsampled data have worked best previously, we chose to move on from attempting to fit a model on the dummy-coded training data and instead focus on the downsampled training data sets.**
-
-```{r}
-# # predict probabilities on holdout
-# log_reg3_pred_prob <- predict(log_reg3, data_holdout_dummy, type = "prob")[, "Yes"]
-# 
-# # create true labels (1 = Yes, 0 = No)
-# true_labels <- ifelse(data_holdout_dummy$loan_default == "Yes", 1, 0)
-# 
-# # use ROCR to evaluate across thresholds
-# pred <- ROCR::prediction(log_reg3_pred_prob, true_labels)
-# 
-# # get precision-recall performance
-# perf <- ROCR::performance(pred, measure = "prec", x.measure = "rec")
-# 
-# # compute AUC
-# perf_auc <- ROCR::performance(pred, measure = "auc")
-# auc_log_reg3 <- perf_auc@y.values[[1]]
-# print(auc_log_reg3)
-# 
-# # extract values
-# precision <- perf@y.values[[1]]
-# recall <- perf@x.values[[1]]
-# thresholds <- perf@alpha.values[[1]]
-# 
-# # compute F1
-# f1 <- 2 * (precision * recall) / (precision + recall)
-# f1[is.nan(f1)] <- 0
-# 
-# # find best threshold and F1
-# best_index_log_reg3 <- which.max(f1)
-# best_thresh_log_reg3 <- thresholds[best_index_log_reg3]
-# best_f1_log_reg3 <- f1[best_index_log_reg3]
-# 
-# # print results
-# cat("Best threshold:", best_thresh_log_reg3, "\n")
-# cat("Best F1 score:", best_f1_log_reg3, "\n")
-# 
-# # create final class predictions using best threshold
-# log_reg3_pred_class <- factor(
-#   ifelse(log_reg3_pred_prob >= best_thresh_log_reg3, "Yes", "No"),
-#   levels = c("No", "Yes")
-# )
-# 
-# # confusion matrix with optimal threshold
-# cm <- caret::confusionMatrix(log_reg3_pred_class, data_holdout_dummy$loan_default, positive = "Yes")
-# print(cm)
-```
 
 ### Downsampled Dummy-coded Training Data
 
@@ -400,9 +328,9 @@ Fit a logistic regression on the downsampled, dummy-coded training data using el
 #   family = "binomial"
 # )
 
-# save model as .rds file
+# save model as .rds file to save time in knitting
 # saveRDS(log_reg4, file = "log_reg4.rds")
-# read in .rds file
+# read in .rds file to save time in knitting
 log_reg4 <- readRDS("log_reg4.rds")
 
 plot(log_reg4)
