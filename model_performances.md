@@ -23,3 +23,7 @@ log.cv(10 folds) | original | 0.8104 | 0.6795 | 0.8424 | 0.8422 | 0.5844 | 0.284
 log.cv(10 folds) | downsampled | 0.8122 | 0.6755 | 0.8456 | 0.8442 | 0.5853 | 0.6221
 
 log.cv(10 folds) | downsampled dummy-coded | 0.814 | 0.6692 | 0.8493 | 0.8449 | 0.5854 | 0.629
+
+log.cv(10 folds. Nick) | original | 0.7608 | 0.583 | 0.8042 | 0.7688 | 0.4888 | 0.2519
+
+log.cv(10 folds. Nick) | downsampled | 0.7337 | 0.6446 | 0.7554 | 0.7698 | 0.4871 | 0.5411
